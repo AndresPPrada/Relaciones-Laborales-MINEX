@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.11';
+const APP_VERSION='27.12';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -57,6 +57,7 @@ function parseDateValue(v){
  if(v instanceof Date&&!isNaN(v))return `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())}`;
  if(typeof v==='number')return excelSerialToDate(v)||String(v);
  const s=String(v).trim();if(!s)return '';
+ if(/^(?:\d{1,2}[-/.]\d{4}|\d{4}[-/.]\d{1,2})$/.test(s))return '';
  let m=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);if(m)return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
  m=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);if(m)return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
  const d=new Date(s);return isNaN(d)?s:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
