@@ -132,7 +132,14 @@ async function migrateLocalToCloud(){
  if(remoteCases.length||remoteEmployees.length){cloudMigrated=true;return}
  const [localCases,localEmployees]=await Promise.all([allLocal('cases'),allLocal('employees')]);
  if(localCases.length)await remoteBulkAdd('cases',localCases);
- if(localEmployees.length)await remoteBulkAdd('employees',localEmployees);
+ if(localEmployees.length){
+  const uniqueEmployees=new Map();
+  for(const employee of localEmployees){
+   const key=employeeKey(employee);
+   if(key&&!uniqueEmployees.has(key))uniqueEmployees.set(key,employee);
+  }
+  await remoteBulkAdd('employees',[...uniqueEmployees.values()]);
+ }
  cloudMigrated=true;
 }
 function startCloudRealtime(){
