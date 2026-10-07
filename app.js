@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.15';
+const APP_VERSION='27.16';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -76,6 +76,14 @@ async function bulkDeleteLocal(store,ids){if(!ids.length)return;const db=await o
 async function putLocal(store,obj){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).put(obj);q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)})}
 async function delLocal(store,id){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).delete(id);q.onsuccess=r;q.onerror=()=>j(q.error)})}
 async function clearLocalStore(store){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).clear();q.onsuccess=r;q.onerror=()=>j(q.error)})}
+async function setCloudCleared(store){
+ const key=`cloudCleared:${store}`;
+ await putLocal('config',{key,value:true});
+}
+async function cloudWasCleared(store){
+ const rows=await allLocal('config');
+ return rows.some(row=>row.key===`cloudCleared:${store}`&&row.value===true);
+}
 async function all(store){return cloudSession&&cloudTable(store)?cloudAll(store):allLocal(store)}
 async function add(store,obj){return cloudSession&&cloudTable(store)?remoteAdd(store,obj):addLocal(store,obj)}
 async function bulkAdd(store,rows,{clear=false}={}){return cloudSession&&cloudTable(store)?remoteBulkAdd(store,rows,{clear}):bulkAddLocal(store,rows,{clear})}
@@ -85,6 +93,7 @@ async function del(store,id){return cloudSession&&cloudTable(store)?remoteDelete
 async function clearStore(store){
  if(cloudSession&&cloudTable(store))await remoteBulkAdd(store,[],{clear:true});
  await clearLocalStore(store);
+ if(cloudSession&&cloudTable(store))await setCloudCleared(store);
 }
 // MINEX usa IndexedDB como almacenamiento operativo local. GitHub es únicamente el medio de publicación del proyecto; no es una base de datos de MINEX.
 
@@ -190,15 +199,18 @@ async function migrateLocalToCloud(){
   cloudAll('cases'),cloudAll('employees'),cloudAll('duplicateReviews'),
   allLocal('cases'),allLocal('employees'),allLocal('duplicateReviews')
  ]);
+ const [casesCleared,employeesCleared,duplicatesCleared]=await Promise.all([
+  cloudWasCleared('cases'),cloudWasCleared('employees'),cloudWasCleared('duplicateReviews')
+ ]);
  if(!remoteCases.length&&!remoteEmployees.length&&!remoteDuplicates.length){
   const uniqueEmployees=new Map();
   for(const employee of localEmployees){
    const key=employeeKey(employee);
    if(key)uniqueEmployees.set(key,uniqueEmployees.has(key)?mergeImportedEmployee(uniqueEmployees.get(key),employee):employee);
   }
-  if(localCases.length)await remoteBulkAdd('cases',localCases);
-  if(uniqueEmployees.size)await remoteBulkAdd('employees',[...uniqueEmployees.values()]);
-  if(localDuplicates.length){
+  if(localCases.length&&!casesCleared)await remoteBulkAdd('cases',localCases);
+  if(uniqueEmployees.size&&!employeesCleared)await remoteBulkAdd('employees',[...uniqueEmployees.values()]);
+  if(localDuplicates.length&&!duplicatesCleared){
    const copies=localDuplicates.map(row=>{const copy={...row};delete copy._id;return copy});
    await remoteBulkAdd('duplicateReviews',copies);
   }
@@ -907,6 +919,7 @@ try{
  cloudSyncInProgress=true;
  for(const s of STORES)await clearStore(s);
  await putLocal('config',{key:'initialized',value:true});
+ await Promise.all(['cases','employees','duplicateReviews'].map(setCloudCleared));
  state.cases=[];state.employees=[];state.duplicateReviews=[];
  toast('Toda la información fue eliminada correctamente');
  render();
