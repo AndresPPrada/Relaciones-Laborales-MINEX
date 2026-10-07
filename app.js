@@ -1,12 +1,12 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.5';
+const APP_VERSION='27.6';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
 let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudSyncInProgress=false,cloudDuplicateReviewsAvailable=false;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
 const STORES=['cases','employees','volumetries','config','duplicateReviews'];
-const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,currentEditor:'Usuario autenticado'};
+const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,importInProgress:false,currentEditor:'Usuario autenticado'};
 const CASE_FIELDS=['ITEM','FECHA','MES','REQUERIMIENTO','EMP','DETALLE DE LA SOLICITUD','CEDULA','EMPLEADO / EMPRESA','ÁREA','CENTRO DE TRABAJO','SOLICITANTE','DESARROLLO DEL CASO','ÚTLIMO SEGUIMIENTO','OBSERVACIONES','PENDIENTE POR','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','MES CIERRE','DIAS ACUMULADOS DEL PROCESO','ESTADO','VISIBLE_DASH','MATERNIDAD_DASH'];
 const EMP_FIELDS=['EMPRESA CONTRATO','TIPO DOCUMENTO','DOCUMENTO','NOMBRE DEL EMPLEADO','CARGO','NIVEL EN LA ESTRUCTURA','JEFE INMEDIATO','SUB AREA','AREA / UNIDAD ORGANIZACIONAL','DIRECCION','GERENCIA','CLASIFICACION COSTO / GASTO','UBICACION','CLASIFICACION GENERAL','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO','TELEFONO','CORREO'];
 const DATE_FIELDS=['FECHA','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'];
@@ -519,7 +519,8 @@ function importPreview(){
  const hasErrors=rows.some(r=>r._importStatus==='error');
  const rawHeaders=Object.keys(rows[0]||{}).filter(k=>k!=='_importStatus');const headers=state.importType==='cases'?Array.from(new Set(['ITEM','FECHA','REQUERIMIENTO','EMP','ÁREA','DETALLE DE LA SOLICITUD','CEDULA','EMPLEADO / EMPRESA','FECHA DE SEGUIMIENTO','ESTADO'].filter(k=>rawHeaders.includes(k)))).slice(0,10):rawHeaders.slice(0,10);
  const body=rows.slice(0,30).map((r,i)=>`<tr><td>${i+1}</td><td>${r._importStatus==='duplicate-review'?'<span class="badge amber">Duplicado en archivo · revisión</span>':r._importStatus==='update'?'<span class="badge blue">Se actualizará</span>':r._importStatus==='error'?'<span class="badge red">Error</span>':'<span class="badge green">Se agregará</span>'}</td>${headers.map(k=>`<td>${DATE_FIELDS.includes(k)?formatDate(r[k]):esc(r[k])}</td>`).join('')}</tr>`).join('');
- return `<section class="panel"><div class="panel-head"><div><h2>3. Vista previa</h2><p>Las coincidencias se actualizarán, los registros nuevos se agregarán y los duplicados dentro del archivo quedarán para revisión.</p></div><div class="actions"><button class="btn" onclick="state.importRows=[];state.importMeta=null;uploadPage()">Cancelar</button><button class="btn primary" ${valid===0?'disabled':''} onclick="confirmImport()">✓ Confirmar importación (${valid} válidos)</button></div></div>${hasErrors?'<div class="notice warning-notice"><strong>Hay registros con errores.</strong> Puedes continuar: los registros válidos se importarán y los que tengan error serán omitidos.</div>':''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Resultado</th>${headers.map(k=>`<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></section>`;
+ const actionLabel=state.importInProgress?'⏳ Procesando…':'✓ Confirmar importación';
+ return `<section class="panel"><div class="panel-head"><div><h2>3. Vista previa</h2><p>Las coincidencias se actualizarán, los registros nuevos se agregarán y los duplicados dentro del archivo quedarán para revisión.</p></div><div class="actions"><button class="btn" ${state.importInProgress?'disabled':''} onclick="state.importRows=[];state.importMeta=null;uploadPage()">Cancelar</button><button class="btn primary" ${valid===0||state.importInProgress?'disabled':''} onclick="confirmImport()">${actionLabel} (${valid} válidos)</button></div></div>${hasErrors?'<div class="notice warning-notice"><strong>Hay registros con errores.</strong> Puedes continuar: los registros válidos se importarán y los que tengan error serán omitidos.</div>':''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Resultado</th>${headers.map(k=>`<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
 async function previewImport(file){if(!file)return;try{await ensureXLSX();const data=await file.arrayBuffer(),wb=XLSX.read(data,{type:'array',cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]],raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});if(!raw.length)throw new Error('El archivo no contiene registros.');const rows=raw.map(r=>state.importType==='employees'?mapEmployeeImportRow(r):mapImportRow(r));const existing=state.importType==='employees'?state.employees:state.cases;const existingKeys=new Set(existing.map(x=>state.importType==='employees'?employeeKey(x):caseImportKey(x)));const fileKeys=new Set();let duplicates=0,errors=0,updates=0;for(const r of rows){const k=state.importType==='employees'?employeeKey(r):caseImportKey(r);if(state.importType==='employees'&&!r.DOCUMENTO){r._importStatus='error';errors++;continue}if(state.importType!=='employees'&&!r.FECHA){r._importStatus='error';errors++;continue}if(k&&fileKeys.has(k)){r._importStatus='duplicate-review';duplicates++;continue}if(k)fileKeys.add(k);if(k&&existingKeys.has(k)){r._importStatus='update';updates++}else r._importStatus='ok'}state.importRows=rows;state.importMeta={name:file.name,total:rows.length,valid:rows.filter(r=>r._importStatus==='ok'||r._importStatus==='update').length,updates,duplicates,errors};uploadPage()}catch(e){toast('No se pudo analizar el archivo: '+e.message)}
@@ -527,8 +528,19 @@ async function previewImport(file){if(!file)return;try{await ensureXLSX();const 
 function mapEmployeeImportRow(r){const y={};const aliases={};EMP_FIELDS.forEach(f=>aliases[norm(f).replace(/\s+/g,' ')]=f);const extra={'DIRECCION':'DIRECCION','DIRECCION ':'DIRECCION','AREA/UNIDAD ORGANIZACIONAL':'AREA / UNIDAD ORGANIZACIONAL','EMPRESA CONTRATO':'EMPRESA CONTRATO','CLASIFICACION COSTO/GASTO':'CLASIFICACION COSTO / GASTO','ULTIMA FECHA DE INGRESO':'ULTIMA FECHA INGRESO','FECHA DE ANTIGUEDAD':'FECHA ANTIGÜEDAD'};Object.assign(aliases,extra);for(const [k,v] of Object.entries(r)){const n=norm(k).replace(/\s+/g,' ');const ck=aliases[n]||k.replace(/\u00a0/g,' ').trim();y[ck]=['FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'].includes(ck)?parseDateValue(v):v}return cleanEmployee(y)}
 function mapImportRow(r){const y={};for(const [k,v] of Object.entries(r)){const ck=canonicalField(k);y[ck]=DATE_FIELDS.includes(ck)?parseDateValue(v):v}if(y.ESTADO)y.ESTADO=statusText(y.ESTADO);if(y['DIAS ACUMULADOS DEL PROCESO'])y['DIAS ACUMULADOS DEL PROCESO']=Number(y['DIAS ACUMULADOS DEL PROCESO'])||0;return y}
 function employeeKey(x){return norm(x.DOCUMENTO)}
+async function runConcurrent(rows,worker,limit=12){
+ const results=[];
+ for(let i=0;i<rows.length;i+=limit){
+  const batch=rows.slice(i,i+limit);
+  results.push(...await Promise.all(batch.map(worker)));
+ }
+ return results;
+}
 async function confirmImport(){
+ if(state.importInProgress)return;
  try{
+  state.importInProgress=true;
+  toast('Procesando importación… no cierres esta ventana');
   if(cloudSession){
    const [freshCases,freshEmployees,freshDuplicates]=await Promise.all([cloudAll('cases'),cloudAll('employees'),cloudAll('duplicateReviews')]);
    if(state.importType==='employees')state.employees=freshEmployees;
@@ -542,17 +554,18 @@ async function confirmImport(){
  if(state.importType==='employees'){
   const existingByKey=new Map(state.employees.map(x=>[employeeKey(x),x]));
   let updated=0,added=0;
-  for(const incoming of good){const old=existingByKey.get(employeeKey(incoming));if(old){await put('employees',{...old,...incoming,_id:old._id});updated++}else{await add('employees',incoming);added++}}
+  await runConcurrent(good,async incoming=>{const old=existingByKey.get(employeeKey(incoming));if(old){await put('employees',{...old,...incoming,_id:old._id});updated++}else{await add('employees',incoming);added++}});
   toast(`${fmt(good.length)} empleados procesados: ${fmt(updated)} actualizados y ${fmt(added)} nuevos`)
  }else if(state.importType==='cases'){
   let next=Number(nextCaseId(state.cases)),updated=0,added=0;
   const existingByKey=new Map(state.cases.map(x=>[caseImportKey(x),x]));
-  for(const x of good){const old=existingByKey.get(caseImportKey(x));if(old){await put('cases',{...mergeImportedCase(old,x),_id:old._id});updated++}else{if(!String(x.ITEM||'').trim())x.ITEM=String(next++);await add('cases',x);added++}}
+  await runConcurrent(good,async x=>{const old=existingByKey.get(caseImportKey(x));if(old){await put('cases',{...mergeImportedCase(old,x),_id:old._id});updated++}else{if(!String(x.ITEM||'').trim())x.ITEM=String(next++);await add('cases',x);added++}});
   for(const x of dups){if(!String(x.ITEM||'').trim())x.ITEM=String(next++);}
   if(dups.length)await bulkAdd('duplicateReviews',dups.map(x=>{const copy={...x,reviewStatus:'PENDIENTE',detectedAt:todayISO(),detectedBy:state.currentEditor};delete copy._id;return copy}));
   toast(`${fmt(good.length)} casos procesados: ${fmt(updated)} actualizados y ${fmt(added)} nuevos${dups.length?` · ${fmt(dups.length)} duplicados en revisión`:''}`)}
   state.importRows=[];state.importMeta=null;await refresh()
  }catch(error){console.error('Error al confirmar la importación:',error);toast(`No se pudo completar la carga: ${error.message||'error desconocido'}`)}
+ finally{state.importInProgress=false}
 }
 function downloadTemplate(cols,name,sample={}){ensureXLSX().then(()=>{const data=[Object.fromEntries(cols.map(k=>[k,sample[k]??'']))];const ws=XLSX.utils.json_to_sheet(data,{header:cols});ws['!cols']=cols.map(k=>({wch:Math.min(Math.max(k.length+3,14),34)}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'CARGA');const inst=[['INSTRUCCIONES'],['Complete la fila 2 y conserve exactamente los encabezados.'],['Las fechas deben diligenciarse como DD/MM/AAAA.'],['No elimine columnas obligatorias.']];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inst),'INSTRUCCIONES');XLSX.writeFile(wb,`${name}.xlsx`);toast('Formato descargado')}).catch(e=>toast(e.message))}
 function downloadEmployeeTemplate(){downloadTemplate(EMP_FIELDS,'FORMATO_CARGA_EMPLEADOS_MINEX',{'TIPO DOCUMENTO':'CC','EMPRESA CONTRATO':'MX','DOCUMENTO':'123456789','NOMBRE DEL EMPLEADO':'EJEMPLO','FECHA ANTIGÜEDAD':'01/01/2025','ULTIMA FECHA INGRESO':'01/01/2025'})}
