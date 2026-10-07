@@ -6,8 +6,7 @@ const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
 let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
 const STORES=['cases','employees','volumetries','config','duplicateReviews'];
-const EDITORS=['Claudia Yañez','Andres Prada','Diego Uribe'];
-const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,currentEditor:localStorage.getItem('minex_editor')||'Andres Prada'};
+const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,currentEditor:'Usuario autenticado'};
 const CASE_FIELDS=['ITEM','FECHA','MES','REQUERIMIENTO','EMP','DETALLE DE LA SOLICITUD','CEDULA','EMPLEADO / EMPRESA','ÁREA','CENTRO DE TRABAJO','SOLICITANTE','DESARROLLO DEL CASO','ÚTLIMO SEGUIMIENTO','OBSERVACIONES','PENDIENTE POR','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','MES CIERRE','DIAS ACUMULADOS DEL PROCESO','ESTADO','VISIBLE_DASH','MATERNIDAD_DASH'];
 const EMP_FIELDS=['EMPRESA CONTRATO','TIPO DOCUMENTO','DOCUMENTO','NOMBRE DEL EMPLEADO','CARGO','NIVEL EN LA ESTRUCTURA','JEFE INMEDIATO','SUB AREA','AREA / UNIDAD ORGANIZACIONAL','DIRECCION','GERENCIA','CLASIFICACION COSTO / GASTO','UBICACION','CLASIFICACION GENERAL','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO','TELEFONO','CORREO'];
 const DATE_FIELDS=['FECHA','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'];
@@ -161,6 +160,15 @@ async function signInCloud(email,password){
  const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
  if(error)throw error;cloudSession=data.session;return cloudSession;
 }
+function authenticatedEditor(){
+ const user=cloudSession?.user;
+ const metadata=user?.user_metadata||{};
+ if(metadata.full_name||metadata.name)return String(metadata.full_name||metadata.name).trim();
+ const email=String(user?.email||'').toLowerCase();
+ if(email.includes('claudia'))return 'Claudia Yañez';
+ if(email.includes('andres')||email.includes('prada'))return 'Andres Prada';
+ return user?.email||'Usuario autenticado';
+}
 async function signOutCloud(){
  if(cloudChannel){await supabaseClient.removeChannel(cloudChannel);cloudChannel=null}
  clearTimeout(cloudRefreshTimer);
@@ -172,6 +180,7 @@ function authPage(message=''){
  document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const button=e.target.querySelector('button');button.disabled=true;try{await signInCloud(d.email,d.password);await startApp()}catch(error){authPage(error.message||'No fue posible iniciar sesión')}};
 }
 async function startApp(){
+ state.currentEditor=authenticatedEditor();
  const [c,e,cat]=await Promise.all([loadJson('./data/cases.json'),loadJson('./data/employees.json'),loadJson('./data/catalogs.json')]);
  window.INIT_CASES=c;window.INIT_EMPLOYEES=e;state.catalogs=cat||{};
  await seed();await migrateLocalToCloud();startCloudRealtime();await refresh();
@@ -240,7 +249,7 @@ async function init(){
    if(!supabaseClient)throw new Error('No se pudo cargar el cliente de Supabase');
    const {data}=await supabaseClient.auth.getSession();
    if(!data.session){authPage();return}
-   cloudSession=data.session;await startApp();
+   cloudSession=data.session;state.currentEditor=authenticatedEditor();await startApp();
  }catch(err){
    console.error(err);
    document.getElementById('app').innerHTML=`<div class="boot-error"><div class="card"><div class="brand-dark">MINEX</div><h1>No fue posible iniciar</h1><p>${esc(err.message)}</p><p class="muted">Verifica que index.html y la carpeta data estén publicados correctamente.</p><button class="btn primary" onclick="location.reload()">Reintentar</button></div></div>`;
@@ -248,7 +257,7 @@ async function init(){
 }
 async function refresh(){const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);state.cases=cases;state.employees=employees;state.duplicateReviews=duplicates;render()}
 function navItems(){return [['dashboard','▦','Dashboard'],['cases','▤','Casos'],['follow','◷','Seguimientos'],['upload','⇧','Cargar datos'],['reports','◫','Informes'],['employees','♙','Empleados'],['export','⇩','Exportar'],['settings','⚙','Configuración']]}
-function layout(content){const userLabel=cloudSession?.user?.email||state.currentEditor;const initials=userLabel.includes('@')?userLabel.slice(0,2).toUpperCase():state.currentEditor.split(' ').map(x=>x[0]).slice(0,2).join('');document.getElementById('app').innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><span>MINEX</span><small>GESTIÓN DE RELACIONES LABORALES</small></div><div class="nav">${navItems().map(([id,ic,label])=>`<button class="${state.page===id?'active':''}" onclick="go('${id}')"><i>${ic}</i><span>${label}</span></button>`).join('')}</div><div class="side-foot"><div class="mini-brand">MINEX</div><small>GitHub Pages · MINEX</small></div></aside><main class="main"><div class="topbar"><div class="crumb">MINEX / ${pageLabel(state.page)}</div><div class="top-actions"><button class="top-search" onclick="go('cases')">⌕ <span>Buscar en la aplicación…</span><kbd>Ctrl K</kbd></button><div class="user-chip"><span class="avatar">${esc(initials)}</span><div><strong title="${esc(userLabel)}">${esc(userLabel)}</strong><small><span class="sync-dot"></span> Sincronizado</small></div><select class="editor-mini" onchange="setEditor(this.value)">${EDITORS.map(e=>`<option ${e===state.currentEditor?'selected':''}>${esc(e)}</option>`).join('')}</select><button class="btn logout-btn" onclick="signOutCloud()">Cerrar sesión</button></div></div></div>${content}</main></div>`}
+function layout(content){const userLabel=cloudSession?.user?.email||state.currentEditor;const initials=userLabel.includes('@')?userLabel.slice(0,2).toUpperCase():state.currentEditor.split(' ').map(x=>x[0]).slice(0,2).join('');document.getElementById('app').innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><span>MINEX</span><small>GESTIÓN DE RELACIONES LABORALES</small></div><div class="nav">${navItems().map(([id,ic,label])=>`<button class="${state.page===id?'active':''}" onclick="go('${id}')"><i>${ic}</i><span>${label}</span></button>`).join('')}</div><div class="side-foot"><div class="mini-brand">MINEX</div><small>GitHub Pages · MINEX</small></div></aside><main class="main"><div class="topbar"><div class="crumb">MINEX / ${pageLabel(state.page)}</div><div class="top-actions"><button class="top-search" onclick="go('cases')">⌕ <span>Buscar en la aplicación…</span><kbd>Ctrl K</kbd></button><div class="user-chip"><span class="avatar">${esc(initials)}</span><div><strong title="${esc(userLabel)}">${esc(userLabel)}</strong><small><span class="sync-dot"></span> Sincronizado · ${esc(state.currentEditor)}</small></div><button class="btn logout-btn" onclick="signOutCloud()">Cerrar sesión</button></div></div></div>${content}</main></div>`}
 function pageLabel(p){return ({dashboard:'Dashboard',cases:'Casos',follow:'Seguimientos',upload:'Cargar datos',reports:'Informes',employees:'Empleados',export:'Exportar',settings:'Configuración'})[p]||p}
 function header(title,sub,actions=''){return `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="actions">${actions}</div></div>`}
 async function go(p){state.page=p;state.filters={};await refresh()}
@@ -308,7 +317,6 @@ function caseForm(x){
  const hist=Array.isArray(x.SEGUIMIENTOS_HISTORIAL)?x.SEGUIMIENTOS_HISTORIAL:[];
  const last=hist[hist.length-1];
  const lastText=x['ÚTLIMO SEGUIMIENTO']||'';
- const editorOptions=EDITORS.map(e=>`<option value="${esc(e)}" ${e===state.currentEditor?'selected':''}>${esc(e)}</option>`).join('');
  return `<div class="formgrid corporate-form">
  <div class="form-section"><div class="form-section-title">Información general</div>${fieldInput('ITEM','ID (automático)',x.ITEM||nextCaseId(),'text','readonly tabindex="-1" title="Asignado automáticamente"')}${fieldInput('FECHA','Fecha',parseDateValue(x.FECHA),'date')}${fieldInput('MES','Mes',x.MES,'text')}${fieldSelect('REQUERIMIENTO','Requerimiento',state.catalogs.REQUERIMIENTO||unique('REQUERIMIENTO'),x.REQUERIMIENTO)}${fieldSelect('EMP','Empresa',state.catalogs.EMP||unique('EMP'),x.EMP)}${fieldSelect('ÁREA','Área',state.catalogs['ÁREA']||unique('ÁREA'),x['ÁREA'])}</div>
  <div class="form-section"><div class="form-section-title">Persona / organización</div>${fieldInput('CEDULA','Cédula',x.CEDULA,'text','onchange="autofillEmployee(this.value)"')}${fieldInput('EMPLEADO / EMPRESA','Empleado / Empresa',x['EMPLEADO / EMPRESA'],'text','id="caseEmployee"')}${fieldSelect('CENTRO DE TRABAJO','Centro de trabajo',unique('CENTRO DE TRABAJO'),x['CENTRO DE TRABAJO'])}${fieldInput('SOLICITANTE','Solicitante',x.SOLICITANTE,'text')}${fieldInput('PENDIENTE POR','Pendiente por',x['PENDIENTE POR'],'text')}</div>
@@ -316,8 +324,8 @@ function caseForm(x){
  <div class="follow-editor-card">
    <div class="follow-current"><div class="follow-current-head"><span>Último seguimiento</span><small>${last?`${esc(last.editor||'')} · ${formatDate(last.fecha)}`:'Sin seguimiento registrado'}</small></div><div class="follow-current-text">${lastText?esc(lastText):'Aún no hay un seguimiento registrado.'}</div></div>
    <div class="follow-new">
-     <div class="follow-new-head"><div><strong>${isEdit?'Registrar / editar seguimiento':'Registrar seguimiento'}</strong><small>El sistema identifica automáticamente el cambio de día y conserva el histórico.</small></div></div>
-     <div class="follow-new-grid"><div class="field"><label>Editor del seguimiento <span class="required">*</span></label><select name="EDITOR_SEGUIMIENTO" required><option value="">Seleccionar editor…</option>${editorOptions}</select></div><div class="field"><label>Nuevo comentario</label><textarea name="NUEVO_COMENTARIO" placeholder="Escribe el avance o comentario de esta gestión…"></textarea></div></div>
+     <div class="follow-new-head"><div><strong>${isEdit?'Registrar / editar seguimiento':'Registrar seguimiento'}</strong><small>Registrado automáticamente por ${esc(state.currentEditor)}. El sistema conserva el histórico.</small></div></div>
+     <div class="follow-new-grid"><div class="field"><label>Nuevo comentario</label><textarea name="NUEVO_COMENTARIO" placeholder="Escribe el avance o comentario de esta gestión…"></textarea></div></div>
    </div>
  </div>
 
@@ -336,8 +344,8 @@ function bindCaseForm(existingId, reviewId=null){
   e.preventDefault();
   const d=Object.fromEntries(new FormData(form).entries());
   const comment=(d.NUEVO_COMENTARIO||'').trim();
-  const editor=(d.EDITOR_SEGUIMIENTO||'').trim();
-  delete d.NUEVO_COMENTARIO; delete d.EDITOR_SEGUIMIENTO;
+  const editor=state.currentEditor;
+  delete d.NUEVO_COMENTARIO;
   for(const k of ['FECHA','FECHA DE SEGUIMIENTO','FECHA DE CIERRE']) d[k]=parseDateValue(d[k]);
   d.ESTADO=d['FECHA DE CIERRE']?'CERRADO':'EN SEGUIMIENTO';
   d['MES CIERRE']=d['FECHA DE CIERRE']?autoMonthAbbr(d['FECHA DE CIERRE']):'';
@@ -384,7 +392,6 @@ function bindCaseForm(existingId, reviewId=null){
   closeModal('caseModal');await refresh()
  }
 }
-function setEditor(v){if(!EDITORS.includes(v))return;state.currentEditor=v;localStorage.setItem('minex_editor',v);toast(`Editor activo: ${v}`);render()}
 function renderFollowHistory(x){const h=Array.isArray(x.SEGUIMIENTOS_HISTORIAL)?x.SEGUIMIENTOS_HISTORIAL:[];if(!h.length)return '<div class="history-empty">Sin historial de seguimientos registrados.</div>';return `<div class="history-box"><strong>Historial de seguimientos</strong>${h.slice().reverse().map(item=>`<div class="history-item"><div><strong>${esc(item.editor||'Sin editor')}</strong><small>${formatDate(item.fecha)}</small></div><p>${esc(item.comentario||'')}</p></div>`).join('')}</div>`}
 function caseDuplicateKey(x){return [parseDateValue(x.FECHA),norm(x.EMP),norm(x.REQUERIMIENTO),norm(x.CEDULA||x['EMPLEADO / EMPRESA']),norm(x['DETALLE DE LA SOLICITUD'])].join('|')}
 function caseImportKey(x){const rawItem=String(x.ITEM??'').trim(),item=/^\d+$/.test(rawItem)?String(Number(rawItem)):norm(rawItem);return item?`ITEM|${item}`:`DATA|${caseDuplicateKey(x)}`}
