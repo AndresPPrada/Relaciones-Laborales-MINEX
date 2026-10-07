@@ -69,6 +69,7 @@ body{min-height:100%;height:auto!important;overflow-x:hidden!important;overflow-
 .shell{min-height:100vh;height:auto!important;align-items:stretch;overflow:visible!important}
 .sidebar{overflow-y:auto;overflow-x:hidden}
 .main{min-height:100vh;overflow:visible}
+.logout-btn{padding:7px 9px;font-size:10px}.sync-dot{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 2px #dcfce7}
 .auth-card{width:min(420px,calc(100vw - 32px));text-align:left}.auth-card h1{margin:12px 0 6px}.auth-card .field{margin:14px 0}.auth-card label{display:block;margin-bottom:5px;font-size:12px;font-weight:700}.auth-card input{width:100%;height:40px;border:1px solid var(--line);border-radius:8px;padding:8px 10px}.auth-card .btn{width:100%;margin-top:8px}.auth-error{color:var(--red);font-size:12px}
 @media(max-width:700px){
   html,body{overflow-x:hidden;overflow-y:scroll}

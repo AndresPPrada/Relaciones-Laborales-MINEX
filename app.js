@@ -3,7 +3,7 @@ const APP_VERSION='26.6';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
-let cloudSession=null,cloudMigrated=false,cloudChannel=null;
+let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
 const STORES=['cases','employees','volumetries','config','duplicateReviews'];
 const EDITORS=['Claudia Yañez','Andres Prada','Diego Uribe'];
@@ -145,15 +145,27 @@ async function migrateLocalToCloud(){
 }
 function startCloudRealtime(){
  if(!supabaseClient||cloudChannel)return;
+ const scheduleRefresh=()=>{
+  clearTimeout(cloudRefreshTimer);
+  cloudRefreshTimer=setTimeout(()=>refresh().catch(error=>console.error('No se pudo sincronizar el cambio remoto:',error)),180);
+ };
  cloudChannel=supabaseClient.channel('minex-live')
-  .on('postgres_changes',{event:'*',schema:'public',table:'cases'},()=>refresh())
-  .on('postgres_changes',{event:'*',schema:'public',table:'employees'},()=>refresh())
-  .subscribe();
+  .on('postgres_changes',{event:'*',schema:'public',table:'cases'},scheduleRefresh)
+  .on('postgres_changes',{event:'*',schema:'public',table:'employees'},scheduleRefresh)
+  .subscribe(status=>{
+   if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')console.warn('Sincronización en tiempo real no disponible:',status);
+  });
 }
 async function signInCloud(email,password){
  if(!supabaseClient)throw new Error('No se pudo cargar el cliente de Supabase');
  const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
  if(error)throw error;cloudSession=data.session;return cloudSession;
+}
+async function signOutCloud(){
+ if(cloudChannel){await supabaseClient.removeChannel(cloudChannel);cloudChannel=null}
+ clearTimeout(cloudRefreshTimer);
+ await supabaseClient.auth.signOut();
+ cloudSession=null;cloudMigrated=false;authPage();
 }
 function authPage(message=''){
  document.getElementById('app').innerHTML=`<div class="boot-error"><div class="card auth-card"><div class="brand-dark">MINEX</div><h1>Acceso a MINEX</h1><p>Ingresa para trabajar con la base compartida.</p><form id="authForm"><div class="field"><label>Correo</label><input type="email" name="email" required autocomplete="username"></div><div class="field"><label>Contraseña</label><input type="password" name="password" required autocomplete="current-password"></div><button class="btn primary" type="submit">Ingresar</button></form>${message?`<p class="auth-error">${esc(message)}</p>`:''}</div></div>`;
@@ -236,7 +248,7 @@ async function init(){
 }
 async function refresh(){const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);state.cases=cases;state.employees=employees;state.duplicateReviews=duplicates;render()}
 function navItems(){return [['dashboard','▦','Dashboard'],['cases','▤','Casos'],['follow','◷','Seguimientos'],['upload','⇧','Cargar datos'],['reports','◫','Informes'],['employees','♙','Empleados'],['export','⇩','Exportar'],['settings','⚙','Configuración']]}
-function layout(content){document.getElementById('app').innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><span>MINEX</span><small>GESTIÓN DE RELACIONES LABORALES</small></div><div class="nav">${navItems().map(([id,ic,label])=>`<button class="${state.page===id?'active':''}" onclick="go('${id}')"><i>${ic}</i><span>${label}</span></button>`).join('')}</div><div class="side-foot"><div class="mini-brand">MINEX</div><small>GitHub Pages · MINEX</small></div></aside><main class="main"><div class="topbar"><div class="crumb">MINEX / ${pageLabel(state.page)}</div><div class="top-actions"><button class="top-search" onclick="go('cases')">⌕ <span>Buscar en la aplicación…</span><kbd>Ctrl K</kbd></button><div class="user-chip"><span class="avatar">${state.currentEditor.split(' ').map(x=>x[0]).slice(0,2).join('')}</span><div><strong>${esc(state.currentEditor)}</strong><small>Editor activo</small></div><select class="editor-mini" onchange="setEditor(this.value)">${EDITORS.map(e=>`<option ${e===state.currentEditor?'selected':''}>${esc(e)}</option>`).join('')}</select></div></div></div>${content}</main></div>`}
+function layout(content){const userLabel=cloudSession?.user?.email||state.currentEditor;const initials=userLabel.includes('@')?userLabel.slice(0,2).toUpperCase():state.currentEditor.split(' ').map(x=>x[0]).slice(0,2).join('');document.getElementById('app').innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><span>MINEX</span><small>GESTIÓN DE RELACIONES LABORALES</small></div><div class="nav">${navItems().map(([id,ic,label])=>`<button class="${state.page===id?'active':''}" onclick="go('${id}')"><i>${ic}</i><span>${label}</span></button>`).join('')}</div><div class="side-foot"><div class="mini-brand">MINEX</div><small>GitHub Pages · MINEX</small></div></aside><main class="main"><div class="topbar"><div class="crumb">MINEX / ${pageLabel(state.page)}</div><div class="top-actions"><button class="top-search" onclick="go('cases')">⌕ <span>Buscar en la aplicación…</span><kbd>Ctrl K</kbd></button><div class="user-chip"><span class="avatar">${esc(initials)}</span><div><strong title="${esc(userLabel)}">${esc(userLabel)}</strong><small><span class="sync-dot"></span> Sincronizado</small></div><select class="editor-mini" onchange="setEditor(this.value)">${EDITORS.map(e=>`<option ${e===state.currentEditor?'selected':''}>${esc(e)}</option>`).join('')}</select><button class="btn logout-btn" onclick="signOutCloud()">Cerrar sesión</button></div></div></div>${content}</main></div>`}
 function pageLabel(p){return ({dashboard:'Dashboard',cases:'Casos',follow:'Seguimientos',upload:'Cargar datos',reports:'Informes',employees:'Empleados',export:'Exportar',settings:'Configuración'})[p]||p}
 function header(title,sub,actions=''){return `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="actions">${actions}</div></div>`}
 async function go(p){state.page=p;state.filters={};await refresh()}
