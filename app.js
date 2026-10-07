@@ -1,10 +1,11 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.10';
+const APP_VERSION='27.11';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
 let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudSyncInProgress=false,cloudDuplicateReviewsAvailable=false;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
+let cloudInsertIdPromise=Promise.resolve();
 const STORES=['cases','employees','volumetries','config','duplicateReviews'];
 const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,importInProgress:false,currentEditor:'Usuario autenticado'};
 const CASE_FIELDS=['ITEM','FECHA','MES','REQUERIMIENTO','EMP','DETALLE DE LA SOLICITUD','CEDULA','EMPLEADO / EMPRESA','ÁREA','CENTRO DE TRABAJO','SOLICITANTE','DESARROLLO DEL CASO','ÚTLIMO SEGUIMIENTO','OBSERVACIONES','PENDIENTE POR','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','MES CIERRE','DIAS ACUMULADOS DEL PROCESO','ESTADO','VISIBLE_DASH','MATERNIDAD_DASH'];
@@ -110,13 +111,20 @@ async function nextCloudId(table){
 async function insertCloudRecord(store,obj){
  const table=cloudTable(store);if(!table)return addLocal(store,obj);
  const base=cloudRecord(store,obj);delete base.id;
- let record=base;
- for(let attempt=0;attempt<4;attempt++){
-  const {data,error}=await supabaseClient.from(table).insert(record).select().single();
+ for(let attempt=0;attempt<6;attempt++){
+  const {data,error}=await supabaseClient.from(table).insert(base).select().single();
   if(!error)return data.id;
-  const constraint=String(error.constraint||'');
-  if(error.code!=='23505'||!constraint.endsWith('_pkey'))throw error;
-  record={...base,id:await nextCloudId(table)};
+  if(error.code!=='23505')throw error;
+  await new Promise(resolve=>setTimeout(resolve,Math.min(250*2**attempt,2000)));
+  const nextId=await new Promise((resolve,reject)=>{
+   cloudInsertIdPromise=cloudInsertIdPromise.catch(()=>{}).then(async()=>{
+    try{resolve(await nextCloudId(table))}catch(error){reject(error)}
+   });
+  });
+  const record={...base,id:nextId};
+  const retry=await supabaseClient.from(table).insert(record).select().single();
+  if(!retry.error)return retry.data.id;
+  if(retry.error.code!=='23505')throw retry.error;
  }
  throw new Error(`No fue posible asignar un identificador libre para ${store}.`);
 }
