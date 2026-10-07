@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.6';
+const APP_VERSION='27.7';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -311,16 +311,17 @@ function ensureChart(){return loadScriptOnce('https://cdn.jsdelivr.net/npm/chart
 function ensureXLSX(){return loadScriptOnce('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','XLSX',{get promise(){return xlsxLoader},set promise(v){xlsxLoader=v}})}
 function ensureBootstrap(){return loadScriptOnce('./data_bootstrap_min.js','__MINEX_DATA__',{get promise(){return bootstrapLoader},set promise(v){bootstrapLoader=v}})}
 async function loadJson(path){
+ const key=path.split('/').pop();
+ if(window.__MINEX_DATA__?.[key])return window.__MINEX_DATA__[key];
+ try{
+  await ensureBootstrap();
+  if(window.__MINEX_DATA__?.[key])return window.__MINEX_DATA__[key];
+ }catch(e){console.warn('No se pudo cargar el respaldo embebido:',e.message)}
  try{
    const url=new URL(path,document.baseURI); url.searchParams.set('v',APP_VERSION);
    const r=await fetch(url.href,{cache:'force-cache'});
    const contentType=r.headers.get('content-type')||'';
    if(r.ok&&contentType.includes('json'))return await r.json();
- }catch(e){}
- try{
-   await ensureBootstrap();
-   const key=path.split('/').pop();
-   if(window.__MINEX_DATA__&&window.__MINEX_DATA__[key]) return window.__MINEX_DATA__[key];
  }catch(e){}
  throw new Error(`No se pudo cargar ${path}. Verifica que la carpeta data esté publicada junto a index.html.`);
 }
