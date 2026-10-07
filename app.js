@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.13';
+const APP_VERSION='27.14';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -170,7 +170,7 @@ async function remoteBulkAdd(store,rows,{clear=false}={}){
    if(error)throw error;
   }
   const remaining=await cloudAll(store);
-  if(remaining.length)throw new Error(`Supabase no permitió eliminar todos los registros de ${store}.`);
+  if(remaining.length)throw new Error(`Supabase no permitió eliminar todos los registros de ${store}. Verifica las políticas DELETE de supabase-schema.sql.`);
  }
  if(!rows.length)return;
  const records=rows.map(row=>{const record=cloudRecord(store,row);delete record.id;return record});
