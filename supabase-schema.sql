@@ -31,4 +31,9 @@ drop policy if exists "Authenticated users can delete duplicate reviews" on publ
 create policy "Authenticated users can delete duplicate reviews"
   on public.duplicate_reviews for delete to authenticated using (true);
 
-alter publication supabase_realtime add table public.duplicate_reviews;
+do $$
+begin
+  alter publication supabase_realtime add table public.duplicate_reviews;
+exception
+  when duplicate_object then null;
+end $$;

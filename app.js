@@ -541,7 +541,7 @@ async function confirmImport(){
   const existingByKey=new Map(state.cases.map(x=>[caseImportKey(x),x]));
   for(const x of good){const old=existingByKey.get(caseImportKey(x));if(old){await put('cases',{...mergeImportedCase(old,x),_id:old._id});updated++}else{if(!String(x.ITEM||'').trim())x.ITEM=String(next++);await add('cases',x);added++}}
   for(const x of dups){if(!String(x.ITEM||'').trim())x.ITEM=String(next++);}
-  if(dups.length)await bulkAdd('duplicateReviews',dups.map(x=>({...x,reviewStatus:'PENDIENTE',detectedAt:todayISO(),detectedBy:state.currentEditor})));
+  if(dups.length)await bulkAdd('duplicateReviews',dups.map(x=>{const copy={...x,reviewStatus:'PENDIENTE',detectedAt:todayISO(),detectedBy:state.currentEditor};delete copy._id;return copy}));
   toast(`${fmt(good.length)} casos procesados: ${fmt(updated)} actualizados y ${fmt(added)} nuevos${dups.length?` · ${fmt(dups.length)} duplicados en revisión`:''}`)}
   state.importRows=[];state.importMeta=null;await refresh()
  }catch(error){console.error('Error al confirmar la importación:',error);toast(`No se pudo completar la carga: ${error.message||'error desconocido'}`)}
