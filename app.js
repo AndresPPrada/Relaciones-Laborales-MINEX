@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.8';
+const APP_VERSION='27.9';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -102,11 +102,27 @@ async function cloudAll(store){
  if(error)throw error;return (data||[]).map(row=>localRecord(store,row));
 }
 async function allData(store){return cloudSession&&cloudTable(store)?cloudAll(store):allLocal(store)}
+async function nextCloudId(table){
+ const {data,error}=await supabaseClient.from(table).select('id').order('id',{ascending:false}).limit(1);
+ if(error)throw error;
+ return Number(data?.[0]?.id||0)+1;
+}
+async function insertCloudRecord(store,obj){
+ const table=cloudTable(store);if(!table)return addLocal(store,obj);
+ const base=cloudRecord(store,obj);delete base.id;
+ let record=base;
+ for(let attempt=0;attempt<4;attempt++){
+  const {data,error}=await supabaseClient.from(table).insert(record).select().single();
+  if(!error)return data.id;
+  const constraint=String(error.constraint||'');
+  if(error.code!=='23505'||!constraint.endsWith('_pkey'))throw error;
+  record={...base,id:await nextCloudId(table)};
+ }
+ throw new Error(`No fue posible asignar un identificador libre para ${store}.`);
+}
 async function remoteAdd(store,obj){
  const table=cloudTable(store);if(!table)return addLocal(store,obj);
- const record=cloudRecord(store,obj);delete record.id;
- const {data,error}=await supabaseClient.from(table).insert(record).select().single();
- if(error)throw error;return data.id;
+ return insertCloudRecord(store,obj);
 }
 async function remotePut(store,obj){
  const table=cloudTable(store);if(!table)return putLocal(store,obj);
@@ -135,8 +151,12 @@ async function remoteBulkAdd(store,rows,{clear=false}={}){
  const table=cloudTable(store);if(!table)return bulkAddLocal(store,rows,{clear});
  if(clear){const {error}=await supabaseClient.from(table).delete().not('id','is',null);if(error)throw error}
  if(!rows.length)return;
- const {error}=await supabaseClient.from(table).insert(rows.map(row=>{const record=cloudRecord(store,row);delete record.id;return record}));
- if(error)throw error;
+ const records=rows.map(row=>{const record=cloudRecord(store,row);delete record.id;return record});
+ const {error}=await supabaseClient.from(table).insert(records);
+ if(!error)return;
+ const constraint=String(error.constraint||'');
+ if(error.code!=='23505'||!constraint.endsWith('_pkey'))throw error;
+ for(const row of rows)await insertCloudRecord(store,row);
 }
 async function migrateLocalToCloud(){
  if(cloudMigrated||!cloudSession)return;
