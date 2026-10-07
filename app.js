@@ -136,7 +136,8 @@ async function migrateLocalToCloud(){
   const uniqueEmployees=new Map();
   for(const employee of localEmployees){
    const key=employeeKey(employee);
-   if(key&&!uniqueEmployees.has(key))uniqueEmployees.set(key,employee);
+   if(!key)continue;
+   uniqueEmployees.set(key,uniqueEmployees.has(key)?mergeImportedEmployee(uniqueEmployees.get(key),employee):employee);
   }
   await remoteBulkAdd('employees',[...uniqueEmployees.values()]);
  }
@@ -185,6 +186,14 @@ async function seed(){
 function cleanCase(x){const y={};for(const [k,v] of Object.entries(x||{})){y[k]=DATE_FIELDS.includes(k)?parseDateValue(v):v}if(y.ESTADO)y.ESTADO=statusText(y.ESTADO);if(y['DIAS ACUMULADOS DEL PROCESO']!==''&&y['DIAS ACUMULADOS DEL PROCESO']!=null)y['DIAS ACUMULADOS DEL PROCESO']=Number(y['DIAS ACUMULADOS DEL PROCESO'])||0;return y}
 function nextCaseId(rows=state.cases){const nums=rows.map(x=>{const m=String(x?.ITEM??'').match(/\d+$/);return m?Number(m[0]):0}).filter(Number.isFinite);return String((nums.length?Math.max(...nums):rows.length)+1)}
 function cleanEmployee(x){const y={};for(const k of EMP_FIELDS)y[k]=x[k]??x[k+' ']??'';for(const k of ['FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'])y[k]=parseDateValue(y[k]);if(y.DOCUMENTO)y.DOCUMENTO=String(y.DOCUMENTO).trim();return y}
+function mergeImportedEmployee(existing,incoming){
+ const merged={...existing};
+ for(const key of EMP_FIELDS){
+  const value=incoming[key];
+  if(value!==undefined&&value!==null&&String(value).trim()!=='')merged[key]=value;
+ }
+ return cleanEmployee(merged);
+}
 function loadScriptOnce(src, globalName, holder){
  if(window[globalName]) return Promise.resolve(window[globalName]);
  if(holder.promise) return holder.promise;
