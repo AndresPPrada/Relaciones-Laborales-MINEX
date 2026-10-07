@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='26.8';
+const APP_VERSION='26.9';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -217,7 +217,20 @@ async function signOutCloud(){
 }
 function authPage(message=''){
  document.getElementById('app').innerHTML=`<div class="boot-error"><div class="card auth-card"><div class="brand-dark">MINEX</div><h1>Acceso a MINEX</h1><p>Ingresa para trabajar con la base compartida.</p><form id="authForm"><div class="field"><label>Correo</label><input type="email" name="email" required autocomplete="username"></div><div class="field"><label>Contraseña</label><input type="password" name="password" required autocomplete="current-password"></div><button class="btn primary" type="submit">Ingresar</button><p id="authStatus" class="auth-error" role="alert">${esc(message)}</p></form></div></div>`;
- document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const button=e.target.querySelector('button');const status=document.getElementById('authStatus');button.disabled=true;button.textContent='Conectando…';status.textContent='Validando acceso…';try{await signInCloud(String(d.email||'').trim(),d.password);status.textContent='Cargando información compartida…';await startApp()}catch(error){console.error('Error al iniciar sesión:',error);button.disabled=false;button.textContent='Ingresar';status.textContent=error?.message||'No fue posible iniciar sesión. Verifica tu correo y contraseña.'}};
+ bindAuthForm();
+}
+function bindAuthForm(){
+ const form=document.getElementById('authForm');
+ if(!form||form.dataset.bound==='true')return;
+ form.dataset.bound='true';
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const d=Object.fromEntries(new FormData(form)),button=form.querySelector('button'),status=form.querySelector('#authStatus')||form.appendChild(document.createElement('p'));
+  status.id='authStatus';status.className='auth-error';status.setAttribute('role','alert');
+  button.disabled=true;button.textContent='Conectando…';status.textContent='Validando acceso…';
+  try{await signInCloud(String(d.email||'').trim(),d.password);status.textContent='Cargando información compartida…';await startApp()}
+  catch(error){console.error('Error al iniciar sesión:',error);button.disabled=false;button.textContent='Ingresar';status.textContent=error?.message||'No fue posible iniciar sesión. Verifica tu correo y contraseña.'}
+ });
 }
 async function startApp(){
  state.currentEditor=authenticatedEditor();
@@ -793,4 +806,4 @@ function registerOfflineSupport(){
 }
 function render(){destroyCharts();if(state.page==='dashboard')dashboard();else if(state.page==='cases')casesPage();else if(state.page==='follow')followPage();else if(state.page==='upload')uploadPage();else if(state.page==='reports')reportsPage();else if(state.page==='employees')employeesPage();else if(state.page==='export')exportPage();else settingsPage()}
 function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),2600)}
-keySearch();registerOfflineSupport();init();
+keySearch();registerOfflineSupport();bindAuthForm();init();

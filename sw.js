@@ -1,4 +1,4 @@
-const CACHE_NAME = 'minex-shell-v26.8';
+const CACHE_NAME = 'minex-shell-v26.9';
 const APP_SHELL = [
   './',
   './index.html',
