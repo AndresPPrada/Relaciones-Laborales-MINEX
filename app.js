@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.14';
+const APP_VERSION='27.15';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -163,14 +163,18 @@ async function remoteBulkDelete(store,ids){for(const id of ids)await remoteDelet
 async function remoteBulkAdd(store,rows,{clear=false}={}){
  const table=cloudTable(store);if(!table)return bulkAddLocal(store,rows,{clear});
  if(clear){
-  const {data:existing,error:readError}=await supabaseClient.from(table).select('id');
-  if(readError)throw readError;
-  for(const row of existing||[]){
-   const {error}=await supabaseClient.from(table).delete().eq('id',row.id);
-   if(error)throw error;
+  for(let pass=0;pass<20;pass++){
+   const {data:existing,error:readError}=await supabaseClient.from(table).select('id').range(0,999);
+   if(readError)throw readError;
+   if(!existing?.length)break;
+   for(const row of existing){
+    const {error}=await supabaseClient.from(table).delete().eq('id',row.id);
+    if(error)throw error;
+   }
   }
-  const remaining=await cloudAll(store);
-  if(remaining.length)throw new Error(`Supabase no permitió eliminar todos los registros de ${store}. Verifica las políticas DELETE de supabase-schema.sql.`);
+  const {data:remaining,error:verifyError}=await supabaseClient.from(table).select('id').limit(1);
+  if(verifyError)throw verifyError;
+  if(remaining?.length)throw new Error(`Supabase no permitió eliminar todos los registros de ${store}. Verifica las políticas DELETE de supabase-schema.sql.`);
  }
  if(!rows.length)return;
  const records=rows.map(row=>{const record=cloudRecord(store,row);delete record.id;return record});
