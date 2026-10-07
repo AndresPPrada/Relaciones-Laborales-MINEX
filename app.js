@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.12';
+const APP_VERSION='27.13';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -75,13 +75,17 @@ async function bulkAddLocal(store,rows,{clear=false}={}){if(!rows.length&&!clear
 async function bulkDeleteLocal(store,ids){if(!ids.length)return;const db=await openDB();const tx=db.transaction(store,'readwrite'),os=tx.objectStore(store);for(const id of ids)os.delete(id);await txDone(tx)}
 async function putLocal(store,obj){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).put(obj);q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)})}
 async function delLocal(store,id){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).delete(id);q.onsuccess=r;q.onerror=()=>j(q.error)})}
+async function clearLocalStore(store){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).clear();q.onsuccess=r;q.onerror=()=>j(q.error)})}
 async function all(store){return cloudSession&&cloudTable(store)?cloudAll(store):allLocal(store)}
 async function add(store,obj){return cloudSession&&cloudTable(store)?remoteAdd(store,obj):addLocal(store,obj)}
 async function bulkAdd(store,rows,{clear=false}={}){return cloudSession&&cloudTable(store)?remoteBulkAdd(store,rows,{clear}):bulkAddLocal(store,rows,{clear})}
 async function bulkDelete(store,ids){return cloudSession&&cloudTable(store)?remoteBulkDelete(store,ids):bulkDeleteLocal(store,ids)}
 async function put(store,obj){return cloudSession&&cloudTable(store)?remotePut(store,obj):putLocal(store,obj)}
 async function del(store,id){return cloudSession&&cloudTable(store)?remoteDelete(store,id):delLocal(store,id)}
-async function clearStore(store){if(cloudSession&&cloudTable(store))return remoteBulkAdd(store,[],{clear:true});const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).clear();q.onsuccess=r;q.onerror=()=>j(q.error)})}
+async function clearStore(store){
+ if(cloudSession&&cloudTable(store))await remoteBulkAdd(store,[],{clear:true});
+ await clearLocalStore(store);
+}
 // MINEX usa IndexedDB como almacenamiento operativo local. GitHub es únicamente el medio de publicación del proyecto; no es una base de datos de MINEX.
 
 function cloudTable(store){return store==='cases'?'cases':store==='employees'?'employees':store==='duplicateReviews'&&cloudDuplicateReviewsAvailable?'duplicate_reviews':null}
@@ -158,7 +162,16 @@ async function remoteDelete(store,id){
 async function remoteBulkDelete(store,ids){for(const id of ids)await remoteDelete(store,id)}
 async function remoteBulkAdd(store,rows,{clear=false}={}){
  const table=cloudTable(store);if(!table)return bulkAddLocal(store,rows,{clear});
- if(clear){const {error}=await supabaseClient.from(table).delete().not('id','is',null);if(error)throw error}
+ if(clear){
+  const {data:existing,error:readError}=await supabaseClient.from(table).select('id');
+  if(readError)throw readError;
+  for(const row of existing||[]){
+   const {error}=await supabaseClient.from(table).delete().eq('id',row.id);
+   if(error)throw error;
+  }
+  const remaining=await cloudAll(store);
+  if(remaining.length)throw new Error(`Supabase no permitió eliminar todos los registros de ${store}.`);
+ }
  if(!rows.length)return;
  const records=rows.map(row=>{const record=cloudRecord(store,row);delete record.id;return record});
  const {error}=await supabaseClient.from(table).insert(records);
@@ -831,7 +844,7 @@ function openEmployee(existing=null){const x=existing||{};document.body.insertAd
 async function deleteEmployee(id){const x=state.employees.find(y=>y._id===id);if(x&&confirm(`¿Eliminar a ${x['NOMBRE DEL EMPLEADO']||x.DOCUMENTO}?`)){await del('employees',id);toast('Empleado eliminado');refresh()}}
 function settingsPage(){
 const dup=duplicateReport(state.cases,caseDuplicateKey), empDup=duplicateReport(state.employees,employeeKey);
-layout(header('Configuración','Control de datos, calidad y almacenamiento local',`<button class="btn" onclick="restoreInitialData()">↻ Restaurar datos iniciales</button>`)+`
+layout(header('Configuración','Control de datos, calidad y almacenamiento compartido',`<button class="btn" onclick="restoreInitialData()">↻ Restaurar datos iniciales</button><button class="btn primary" onclick="syncNow()">↻ Sincronizar ahora</button>`)+`
 <div class="settings-grid">
 <section class="panel">
 <div class="panel-head"><div><h2>Calidad de datos</h2><p>Identifica inconsistencias antes de generar informes.</p></div></div>
@@ -846,12 +859,14 @@ layout(header('Configuración','Control de datos, calidad y almacenamiento local
 <section class="panel">
 <div class="panel-head"><div><h2>Almacenamiento local</h2><p>IndexedDB conserva una copia local para trabajar con rapidez y como respaldo de la sesión.</p></div></div>
 <div class="notice">IndexedDB funciona como caché local. Cuando GitHub está conectado, los registros modificados se publican en el repositorio y pueden ser descargados por otros usuarios.</div>
+<div class="data-actions"><button class="btn" onclick="exportBackup()">⇩ Descargar respaldo JSON</button><button class="btn" onclick="refresh().catch(error=>toast('No se pudo actualizar: '+error.message))">↻ Recargar datos</button></div>
 </section>
 <section class="panel danger-zone">
 <div class="panel-head"><div><h2>Gestión de datos</h2><p>Acciones destructivas. Se solicita confirmación antes de eliminar información.</p></div></div>
 <div class="data-actions">
 <button class="btn danger-outline" onclick="clearDataStore('cases','casos')">Eliminar todos los casos</button>
 <button class="btn danger-outline" onclick="clearDataStore('employees','empleados')">Eliminar todos los empleados</button>
+<button class="btn danger-outline" onclick="clearDataStore('duplicateReviews','duplicados en revisión')">Eliminar duplicados en revisión</button>
 <div class="notice">Las volumetrías se calculan directamente sobre la base de casos; no existe una segunda base para eliminar.</div>
 <button class="btn danger" onclick="clearAllData()">Eliminar TODA la información</button>
 </div>
@@ -861,25 +876,50 @@ layout(header('Configuración','Control de datos, calidad y almacenamiento local
 function duplicateReport(rows,keyFn){const m=new Map();rows.forEach(x=>{const k=keyFn(x);if(!k)return;if(!m.has(k))m.set(k,[]);m.get(k).push(x)});return [...m.values()].filter(a=>a.length>1)}
 async function restoreInitialData(){
 if(!confirm('Esto reemplazará los datos operativos actuales por los datos iniciales incluidos con la aplicación. ¿Deseas continuar?'))return;
-for(const s of STORES)await clearStore(s);
-await seed();
-toast('Datos iniciales restaurados');
-await refresh();
+try{
+ cloudSyncInProgress=true;
+ for(const s of STORES)await clearStore(s);
+ await seed();
+ await refresh();
+ toast('Datos iniciales restaurados correctamente');
+}catch(error){console.error('No se pudieron restaurar los datos iniciales:',error);toast('No se pudo restaurar: '+error.message)}
+finally{cloudSyncInProgress=false}
 }
 async function clearDataStore(store,label){
 if(!confirm(`Se eliminarán TODOS los ${label}. Esta acción no se puede deshacer. ¿Continuar?`))return;
-await clearStore(store);
-toast(`${label.charAt(0).toUpperCase()+label.slice(1)} eliminados`);
-await refresh();
+try{
+ cloudSyncInProgress=true;
+ await clearStore(store);
+ if(store==='cases'){state.cases=[]}else if(store==='employees'){state.employees=[]}else if(store==='duplicateReviews'){state.duplicateReviews=[]}
+ toast(`${label.charAt(0).toUpperCase()+label.slice(1)} eliminados`);
+ render();
+}catch(error){console.error(`No se pudieron eliminar ${label}:`,error);toast(`No se pudo eliminar ${label}: ${error.message}`)}
+finally{cloudSyncInProgress=false}
 }
 async function clearAllData(){
 if(!confirm('ADVERTENCIA: se eliminarán CASOS, EMPLEADOS, VOLUMETRÍAS y configuraciones locales. La aplicación quedará vacía. ¿Deseas continuar?'))return;
 if(!confirm('Última confirmación: ¿ELIMINAR TODA LA INFORMACIÓN? Esta acción no se puede deshacer.'))return;
-for(const s of STORES)await clearStore(s);
-await add('config',{key:'initialized',value:true});
-state.cases=[];state.employees=[];state.duplicateReviews=[];
-toast('Toda la información fue eliminada');
-await refresh();
+try{
+ cloudSyncInProgress=true;
+ for(const s of STORES)await clearStore(s);
+ await putLocal('config',{key:'initialized',value:true});
+ state.cases=[];state.employees=[];state.duplicateReviews=[];
+ toast('Toda la información fue eliminada correctamente');
+ render();
+}catch(error){console.error('No se pudo eliminar toda la información:',error);toast('No se pudo eliminar toda la información: '+error.message)}
+finally{cloudSyncInProgress=false}
+}
+async function syncNow(){
+ try{cloudSyncInProgress=true;await refresh();toast('Sincronización completada')}catch(error){console.error('No se pudo sincronizar:',error);toast('No se pudo sincronizar: '+error.message)}finally{cloudSyncInProgress=false}
+}
+async function exportBackup(){
+ try{
+  const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);
+  const payload={version:APP_VERSION,exportedAt:new Date().toISOString(),cases,employees,duplicateReviews:duplicates};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`MINEX-respaldo-${todayISO()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast('Respaldo descargado');
+ }catch(error){console.error('No se pudo descargar el respaldo:',error);toast('No se pudo descargar el respaldo: '+error.message)}
 }
 function keySearch(){document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();go('cases')}})}
 function registerOfflineSupport(){
