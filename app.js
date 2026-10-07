@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.17';
+const APP_VERSION='27.18';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -91,7 +91,7 @@ async function bulkDelete(store,ids){return cloudSession&&cloudTable(store)?remo
 async function put(store,obj){return cloudSession&&cloudTable(store)?remotePut(store,obj):putLocal(store,obj)}
 async function del(store,id){return cloudSession&&cloudTable(store)?remoteDelete(store,id):delLocal(store,id)}
 async function clearStore(store){
- if(cloudSession&&cloudTable(store))await remoteBulkAdd(store,[],{clear:true});
+ if(cloudSession&&cloudTable(store))await remoteClearTable(store);
  await clearLocalStore(store);
  if(cloudSession&&cloudTable(store))await setCloudCleared(store);
 }
@@ -169,6 +169,24 @@ async function remoteDelete(store,id){
  if(error)throw error;
 }
 async function remoteBulkDelete(store,ids){for(const id of ids)await remoteDelete(store,id)}
+async function remoteClearTable(store,onProgress){
+ const table=cloudTable(store);if(!table)return clearLocalStore(store);
+ let total=0;
+ for(let pass=0;pass<20;pass++){
+  const {data:rows,error:readError}=await supabaseClient.from(table).select('id').range(0,499);
+  if(readError)throw readError;
+  if(!rows?.length)break;
+  const ids=rows.map(row=>row.id);
+  const {error}=await supabaseClient.from(table).delete().in('id',ids);
+  if(error)throw error;
+  total+=ids.length;
+  onProgress?.(total);
+ }
+ const {data:remaining,error}=await supabaseClient.from(table).select('id').limit(1);
+ if(error)throw error;
+ if(remaining?.length)throw new Error(`No se pudieron eliminar todos los registros de ${store}.`);
+ return total;
+}
 async function remoteBulkAdd(store,rows,{clear=false}={}){
  const table=cloudTable(store);if(!table)return bulkAddLocal(store,rows,{clear});
  if(clear){
@@ -888,9 +906,10 @@ async function clearDataStore(store,label){
 if(!confirm(`Se eliminarán TODOS los ${label}. Esta acción no se puede deshacer. ¿Continuar?`))return;
 try{
  cloudSyncInProgress=true;
+ toast(`Eliminando ${label}… espera la confirmación final`);
  await clearStore(store);
  if(store==='cases'){state.cases=[]}else if(store==='employees'){state.employees=[]}else if(store==='duplicateReviews'){state.duplicateReviews=[]}
- toast(`${label.charAt(0).toUpperCase()+label.slice(1)} eliminados`);
+ toast(`${label.charAt(0).toUpperCase()+label.slice(1)} eliminados correctamente`);
  render();
 }catch(error){console.error(`No se pudieron eliminar ${label}:`,error);toast(`No se pudo eliminar ${label}: ${error.message}`)}
 finally{cloudSyncInProgress=false}
@@ -900,6 +919,7 @@ if(!confirm('ADVERTENCIA: se eliminarán CASOS, EMPLEADOS, VOLUMETRÍAS y config
 if(!confirm('Última confirmación: ¿ELIMINAR TODA LA INFORMACIÓN? Esta acción no se puede deshacer.'))return;
 try{
  cloudSyncInProgress=true;
+ toast('Eliminando toda la información… espera la confirmación final');
  for(const s of STORES)await clearStore(s);
  await putLocal('config',{key:'initialized',value:true});
  await Promise.all(['cases','employees','duplicateReviews'].map(setCloudCleared));

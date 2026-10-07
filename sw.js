@@ -1,5 +1,5 @@
-const CACHE_NAME = 'minex-shell-v27.17';
-const APP_VERSION = '27.17';
+const CACHE_NAME = 'minex-shell-v27.18';
+const APP_VERSION = '27.18';
 const APP_SHELL = [
   `./?v=${APP_VERSION}`,
   `./index.html?v=${APP_VERSION}`,
