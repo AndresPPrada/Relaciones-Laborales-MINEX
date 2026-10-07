@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='26.9';
+const APP_VERSION='27.0';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -236,8 +236,12 @@ async function startApp(){
  state.currentEditor=authenticatedEditor();
  const [c,e,cat]=await Promise.all([loadJson('./data/cases.json'),loadJson('./data/employees.json'),loadJson('./data/catalogs.json')]);
  window.INIT_CASES=c;window.INIT_EMPLOYEES=e;state.catalogs=cat||{};
- await seed();await detectCloudSchema();await migrateLocalToCloud();startCloudRealtime();await refresh();
+ await seed();
+ await detectCloudSchema();
+ startCloudRealtime();
+ await refresh();
  if(!cloudDuplicateReviewsAvailable)toast('Supabase requiere ejecutar supabase-schema.sql para compartir duplicados');
+ migrateLocalToCloud().then(()=>refresh()).catch(error=>console.error('No se pudo completar la migración en segundo plano:',error));
 }
 
 async function storeCount(store){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store).objectStore(store).count();q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)})}
