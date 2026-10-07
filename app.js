@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.4';
+const APP_VERSION='27.5';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -84,9 +84,9 @@ async function clearStore(store){if(cloudSession&&cloudTable(store))return remot
 
 function cloudTable(store){return store==='cases'?'cases':store==='employees'?'employees':store==='duplicateReviews'&&cloudDuplicateReviewsAvailable?'duplicate_reviews':null}
 function cloudRecord(store,row){
- if(store==='cases')return {id:row._id,item:row.ITEM??null,data:row,seguimientos_historial:Array.isArray(row.SEGUIMIENTOS_HISTORIAL)?row.SEGUIMIENTOS_HISTORIAL:[],updated_by:cloudSession?.user?.id||null};
- if(store==='employees')return {id:row._id,documento:String(row.DOCUMENTO||''),data:row,updated_by:cloudSession?.user?.id||null};
- if(store==='duplicateReviews')return {id:row._id,item:row.ITEM??null,data:row,review_status:row.reviewStatus||'PENDIENTE',detected_at:row.detectedAt||null,detected_by:row.detectedBy||null,updated_by:cloudSession?.user?.id||null};
+ if(store==='cases')return {id:row._id??undefined,item:row.ITEM??null,data:row,seguimientos_historial:Array.isArray(row.SEGUIMIENTOS_HISTORIAL)?row.SEGUIMIENTOS_HISTORIAL:[],updated_by:cloudSession?.user?.id||null};
+ if(store==='employees')return {id:row._id??undefined,documento:String(row.DOCUMENTO||''),data:row,updated_by:cloudSession?.user?.id||null};
+ if(store==='duplicateReviews')return {id:row._id??undefined,item:row.ITEM??null,data:row,review_status:row.reviewStatus||'PENDIENTE',detected_at:row.detectedAt||null,detected_by:row.detectedBy||null,updated_by:cloudSession?.user?.id||null};
  return row;
 }
 function localRecord(store,row){
@@ -113,7 +113,15 @@ async function remotePut(store,obj){
  const payload=cloudRecord(store,obj);delete payload.id;
  const {data,error}=await supabaseClient.from(table).update(payload).eq('id',obj._id).select('id');
  if(error)throw error;
- if(!data?.length)throw new Error(`No se encontró el registro remoto ${obj._id} para actualizar. Se recargará la base compartida.`);
+ if(data?.length)return obj._id;
+ const keyField=store==='cases'?'item':store==='employees'?'documento':null;
+ const keyValue=store==='cases'?String(obj.ITEM??''):store==='employees'?String(obj.DOCUMENTO??''):'';
+ if(keyField&&keyValue){
+  const fallback=await supabaseClient.from(table).update(payload).eq(keyField,keyValue).select('id');
+  if(fallback.error)throw fallback.error;
+  if(fallback.data?.length)return fallback.data[0].id;
+ }
+ throw new Error(`No se encontró el registro remoto para actualizar (${store}:${keyValue||obj._id}).`);
  return obj._id;
 }
 async function remoteDelete(store,id){
@@ -126,7 +134,7 @@ async function remoteBulkAdd(store,rows,{clear=false}={}){
  const table=cloudTable(store);if(!table)return bulkAddLocal(store,rows,{clear});
  if(clear){const {error}=await supabaseClient.from(table).delete().not('id','is',null);if(error)throw error}
  if(!rows.length)return;
- const {error}=await supabaseClient.from(table).insert(rows.map(row=>cloudRecord(store,row)));
+ const {error}=await supabaseClient.from(table).insert(rows.map(row=>{const record=cloudRecord(store,row);delete record.id;return record}));
  if(error)throw error;
 }
 async function migrateLocalToCloud(){
