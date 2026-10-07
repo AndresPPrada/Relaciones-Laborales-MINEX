@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='26.7';
+const APP_VERSION='26.8';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -133,6 +133,21 @@ async function migrateLocalToCloud(){
   cloudAll('cases'),cloudAll('employees'),cloudAll('duplicateReviews'),
   allLocal('cases'),allLocal('employees'),allLocal('duplicateReviews')
  ]);
+ if(!remoteCases.length&&!remoteEmployees.length&&!remoteDuplicates.length){
+  const uniqueEmployees=new Map();
+  for(const employee of localEmployees){
+   const key=employeeKey(employee);
+   if(key)uniqueEmployees.set(key,uniqueEmployees.has(key)?mergeImportedEmployee(uniqueEmployees.get(key),employee):employee);
+  }
+  if(localCases.length)await remoteBulkAdd('cases',localCases);
+  if(uniqueEmployees.size)await remoteBulkAdd('employees',[...uniqueEmployees.values()]);
+  if(localDuplicates.length){
+   const copies=localDuplicates.map(row=>{const copy={...row};delete copy._id;return copy});
+   await remoteBulkAdd('duplicateReviews',copies);
+  }
+  cloudMigrated=true;
+  return;
+ }
  const remoteCasesByKey=new Map(remoteCases.map(row=>[caseImportKey(row),row]));
  for(const local of localCases){
   const existing=remoteCasesByKey.get(caseImportKey(local));
@@ -201,8 +216,8 @@ async function signOutCloud(){
  cloudSession=null;cloudMigrated=false;authPage();
 }
 function authPage(message=''){
- document.getElementById('app').innerHTML=`<div class="boot-error"><div class="card auth-card"><div class="brand-dark">MINEX</div><h1>Acceso a MINEX</h1><p>Ingresa para trabajar con la base compartida.</p><form id="authForm"><div class="field"><label>Correo</label><input type="email" name="email" required autocomplete="username"></div><div class="field"><label>Contraseña</label><input type="password" name="password" required autocomplete="current-password"></div><button class="btn primary" type="submit">Ingresar</button></form>${message?`<p class="auth-error">${esc(message)}</p>`:''}</div></div>`;
- document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const button=e.target.querySelector('button');button.disabled=true;try{await signInCloud(d.email,d.password);await startApp()}catch(error){authPage(error.message||'No fue posible iniciar sesión')}};
+ document.getElementById('app').innerHTML=`<div class="boot-error"><div class="card auth-card"><div class="brand-dark">MINEX</div><h1>Acceso a MINEX</h1><p>Ingresa para trabajar con la base compartida.</p><form id="authForm"><div class="field"><label>Correo</label><input type="email" name="email" required autocomplete="username"></div><div class="field"><label>Contraseña</label><input type="password" name="password" required autocomplete="current-password"></div><button class="btn primary" type="submit">Ingresar</button><p id="authStatus" class="auth-error" role="alert">${esc(message)}</p></form></div></div>`;
+ document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const button=e.target.querySelector('button');const status=document.getElementById('authStatus');button.disabled=true;button.textContent='Conectando…';status.textContent='Validando acceso…';try{await signInCloud(String(d.email||'').trim(),d.password);status.textContent='Cargando información compartida…';await startApp()}catch(error){console.error('Error al iniciar sesión:',error);button.disabled=false;button.textContent='Ingresar';status.textContent=error?.message||'No fue posible iniciar sesión. Verifica tu correo y contraseña.'}};
 }
 async function startApp(){
  state.currentEditor=authenticatedEditor();
