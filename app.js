@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.7';
+const APP_VERSION='27.8';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -104,7 +104,8 @@ async function cloudAll(store){
 async function allData(store){return cloudSession&&cloudTable(store)?cloudAll(store):allLocal(store)}
 async function remoteAdd(store,obj){
  const table=cloudTable(store);if(!table)return addLocal(store,obj);
- const {data,error}=await supabaseClient.from(table).insert(cloudRecord(store,obj)).select().single();
+ const record=cloudRecord(store,obj);delete record.id;
+ const {data,error}=await supabaseClient.from(table).insert(record).select().single();
  if(error)throw error;return data.id;
 }
 async function remotePut(store,obj){
