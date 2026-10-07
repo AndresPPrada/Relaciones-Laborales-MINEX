@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.19';
+const APP_VERSION='27.20';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -279,8 +279,8 @@ function authenticatedEditor(){
  const user=cloudSession?.user;
  const metadata=user?.user_metadata||{};
  const email=String(user?.email||'').trim().toLowerCase();
- if(USER_DISPLAY_NAMES[email])return USER_DISPLAY_NAMES[email];
  if(metadata.full_name||metadata.name)return String(metadata.full_name||metadata.name).trim();
+ if(USER_DISPLAY_NAMES[email])return USER_DISPLAY_NAMES[email];
  if(email.includes('claudia'))return 'CLAUDIA YAÑEZ';
  if(email.includes('andres')||email.includes('prada'))return 'ANDRES PRADA';
  if(email.includes('diego')||email.includes('uribe'))return 'DIEGO URIBE';
