@@ -1,9 +1,9 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.1';
+const APP_VERSION='27.2';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
-let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudDuplicateReviewsAvailable=false;
+let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudSyncInProgress=false,cloudDuplicateReviewsAvailable=false;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
 const STORES=['cases','employees','volumetries','config','duplicateReviews'];
 const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,currentEditor:'Usuario autenticado'};
@@ -181,7 +181,7 @@ async function detectCloudSchema(){
 function startCloudRealtime(){
  if(!supabaseClient||cloudChannel)return;
  const scheduleRefresh=()=>{
-  if(state.page==='upload')return;
+  if(state.page==='upload'||cloudSyncInProgress)return;
   clearTimeout(cloudRefreshTimer);
   cloudRefreshTimer=setTimeout(()=>{
    refresh().catch(error=>console.error('No se pudo sincronizar el cambio remoto:',error));
@@ -243,11 +243,16 @@ async function startApp(){
  state.cases=localCases;state.employees=localEmployees;state.duplicateReviews=localDuplicates;
  render();
  Promise.resolve().then(async()=>{
-  await detectCloudSchema();
-  startCloudRealtime();
-  await migrateLocalToCloud();
-  await refresh();
-  if(!cloudDuplicateReviewsAvailable)toast('Supabase requiere ejecutar supabase-schema.sql para compartir duplicados');
+  cloudSyncInProgress=true;
+  try{
+   await detectCloudSchema();
+   await migrateLocalToCloud();
+   await refresh();
+   startCloudRealtime();
+   if(!cloudDuplicateReviewsAvailable)toast('Supabase requiere ejecutar supabase-schema.sql para compartir duplicados');
+  }finally{
+   cloudSyncInProgress=false;
+  }
  }).catch(error=>console.error('No se pudo completar la sincronización inicial:',error));
 }
 
