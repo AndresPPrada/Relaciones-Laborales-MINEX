@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.3';
+const APP_VERSION='27.4';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -533,10 +533,16 @@ async function confirmImport(){
   if(!confirm(`La carga contiene ${good.length} registros válidos: ${state.importMeta?.updates||0} se actualizarán y ${good.length-(state.importMeta?.updates||0)} se agregarán. Los demás datos existentes se conservarán. ¿Deseas continuar?`))return;
  if(state.importType==='employees'){
   const existingByKey=new Map(state.employees.map(x=>[employeeKey(x),x]));
-  for(const incoming of good){const old=existingByKey.get(employeeKey(incoming));if(old)await put('employees',{...old,...incoming,_id:old._id});else await add('employees',incoming)}
-  toast(`${fmt(good.length)} empleados procesados: ${fmt(state.importMeta?.updates||0)} actualizados y ${fmt(good.length-(state.importMeta?.updates||0))} nuevos`)
- }else if(state.importType==='cases'){let next=Number(nextCaseId(state.cases));for(const x of good){const old=state.cases.find(y=>caseImportKey(y)===caseImportKey(x));if(old){await put('cases',{...mergeImportedCase(old,x),_id:old._id});}else{if(!String(x.ITEM||'').trim())x.ITEM=String(next++);await add('cases',x)}}for(const x of dups){if(!String(x.ITEM||'').trim())x.ITEM=String(next++);}
-  await bulkAdd('duplicateReviews',dups.map(x=>({...x,reviewStatus:'PENDIENTE',detectedAt:todayISO(),detectedBy:state.currentEditor})));toast(`${fmt(good.length)} casos procesados: ${fmt(state.importMeta?.updates||0)} actualizados y ${fmt(good.length-(state.importMeta?.updates||0))} nuevos${dups.length?` · ${fmt(dups.length)} duplicados en revisión`:''}`)}
+  let updated=0,added=0;
+  for(const incoming of good){const old=existingByKey.get(employeeKey(incoming));if(old){await put('employees',{...old,...incoming,_id:old._id});updated++}else{await add('employees',incoming);added++}}
+  toast(`${fmt(good.length)} empleados procesados: ${fmt(updated)} actualizados y ${fmt(added)} nuevos`)
+ }else if(state.importType==='cases'){
+  let next=Number(nextCaseId(state.cases)),updated=0,added=0;
+  const existingByKey=new Map(state.cases.map(x=>[caseImportKey(x),x]));
+  for(const x of good){const old=existingByKey.get(caseImportKey(x));if(old){await put('cases',{...mergeImportedCase(old,x),_id:old._id});updated++}else{if(!String(x.ITEM||'').trim())x.ITEM=String(next++);await add('cases',x);added++}}
+  for(const x of dups){if(!String(x.ITEM||'').trim())x.ITEM=String(next++);}
+  if(dups.length)await bulkAdd('duplicateReviews',dups.map(x=>({...x,reviewStatus:'PENDIENTE',detectedAt:todayISO(),detectedBy:state.currentEditor})));
+  toast(`${fmt(good.length)} casos procesados: ${fmt(updated)} actualizados y ${fmt(added)} nuevos${dups.length?` · ${fmt(dups.length)} duplicados en revisión`:''}`)}
   state.importRows=[];state.importMeta=null;await refresh()
  }catch(error){console.error('Error al confirmar la importación:',error);toast(`No se pudo completar la carga: ${error.message||'error desconocido'}`)}
 }
