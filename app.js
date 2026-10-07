@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.16';
+const APP_VERSION='27.17';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -202,6 +202,10 @@ async function migrateLocalToCloud(){
  const [casesCleared,employeesCleared,duplicatesCleared]=await Promise.all([
   cloudWasCleared('cases'),cloudWasCleared('employees'),cloudWasCleared('duplicateReviews')
  ]);
+ if(remoteCases.length||remoteEmployees.length||remoteDuplicates.length){
+  cloudMigrated=true;
+  return;
+ }
  if(!remoteCases.length&&!remoteEmployees.length&&!remoteDuplicates.length){
   const uniqueEmployees=new Map();
   for(const employee of localEmployees){
@@ -216,27 +220,6 @@ async function migrateLocalToCloud(){
   }
   cloudMigrated=true;
   return;
- }
- const remoteCasesByKey=new Map(remoteCases.map(row=>[caseImportKey(row),row]));
- for(const local of localCases){
-  const existing=remoteCasesByKey.get(caseImportKey(local));
-  if(existing)await remotePut('cases',{...mergeImportedCase(existing,local),_id:existing._id});
-  else await remoteAdd('cases',local);
- }
- const uniqueEmployees=new Map();
- for(const employee of localEmployees){
-  const key=employeeKey(employee);
-  if(key)uniqueEmployees.set(key,uniqueEmployees.has(key)?mergeImportedEmployee(uniqueEmployees.get(key),employee):employee);
- }
- const remoteEmployeesByKey=new Map(remoteEmployees.map(row=>[employeeKey(row),row]));
- for(const local of uniqueEmployees.values()){
-  const existing=remoteEmployeesByKey.get(employeeKey(local));
-  if(existing)await remotePut('employees',{...mergeImportedEmployee(existing,local),_id:existing._id});
-  else await remoteAdd('employees',local);
- }
- const remoteDuplicateIds=new Set(remoteDuplicates.map(row=>String(row._id)));
- for(const duplicate of localDuplicates)if(!remoteDuplicateIds.has(String(duplicate._id))){
-  const copy={...duplicate};delete copy._id;await remoteAdd('duplicateReviews',copy);
  }
  cloudMigrated=true;
 }
