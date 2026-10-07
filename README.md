@@ -1,6 +1,20 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V26.2 — 06/10/2026
+## Versión actual: V26.4 — 07/10/2026
+
+## V26.4 — Corrección de desbordamiento de filtros
+- Se corrige el ancho mínimo de los campos de fecha nativos.
+- Los grupos de filtros usan columnas flexibles con `minmax(0, 1fr)`.
+- En resoluciones intermedias los filtros pasan a dos columnas para conservar legibilidad.
+- Se evita el desbordamiento horizontal de filtros sin ocultar información.
+
+## V26.3 — Experiencia responsive y filtros de Casos
+- Se optimiza la pestaña **Casos** con grupos de filtros visualmente diferenciados.
+- Se agregan indicadores de filtros activos y chips para retirar criterios individualmente.
+- Los rangos de fechas muestran claramente los campos Desde y Hasta.
+- Se mejora la búsqueda global, el contador de resultados y la jerarquía visual.
+- Se incorpora una adaptación responsive global para navegación, paneles, formularios, tablas y acciones en móviles y tabletas.
+- Se mantiene la operación en GitHub Pages sin introducir backend ni dependencia de autenticación ficticia.
 
 Sistema web estático para la gestión de casos de Relaciones Laborales. GitHub es únicamente el medio de publicación del proyecto; MINEX mantiene su operación local mediante IndexedDB.
 
@@ -25,6 +39,12 @@ Sistema web estático para la gestión de casos de Relaciones Laborales. GitHub 
 - Se ajusta el alto de fila al texto, se limpian caracteres inválidos en XML y se aceptan fechas ISO o DD/MM/AAAA.
 - «Exportar», «Seleccionados» y «Duplicados en revisión» descargan ahora en el mismo formato oficial.
 - La detección y revisión de duplicados no se modificó.
+
+## Carga incremental de datos
+- Las nuevas cargas de casos y empleados comparan cada fila con la base existente.
+- Las coincidencias se actualizan conservando su identificador y los registros nuevos se agregan.
+- La información existente que no aparezca en el archivo no se elimina.
+- Los duplicados dentro del mismo archivo continúan en revisión antes de incorporarse.
 
 ## Funcionalidades conservadas
 - Dashboard.
