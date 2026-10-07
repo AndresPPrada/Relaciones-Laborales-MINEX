@@ -1,9 +1,10 @@
-const CACHE_NAME = 'minex-shell-v27.9';
+const CACHE_NAME = 'minex-shell-v27.10';
+const APP_VERSION = '27.10';
 const APP_SHELL = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
+  `./?v=${APP_VERSION}`,
+  `./index.html?v=${APP_VERSION}`,
+  `./styles.css?v=${APP_VERSION}`,
+  `./app.js?v=${APP_VERSION}`,
   './jszip.min.js',
   './case_template_base64.js',
   './data_bootstrap_min.js',
@@ -33,9 +34,10 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+  const isApplicationFile = /\/(?:app|index|sw|styles)\.(?:js|html|css)$/.test(requestUrl.pathname);
 
   event.respondWith(
-    fetch(event.request)
+    fetch(isApplicationFile ? new Request(event.request, {cache: 'no-store'}) : event.request)
       .then(response => {
         if (response.ok) {
           const copy = response.clone();

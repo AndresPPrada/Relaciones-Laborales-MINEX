@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.9';
+const APP_VERSION='27.10';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -875,7 +875,7 @@ await refresh();
 function keySearch(){document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();go('cases')}})}
 function registerOfflineSupport(){
  if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
- navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(error=>{
+ navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`,{scope:'./'}).catch(error=>{
    console.warn('Soporte offline no disponible:',error);
  });
 }
