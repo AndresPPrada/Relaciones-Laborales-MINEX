@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.18';
+const APP_VERSION='27.19';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -11,6 +11,11 @@ const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs
 const CASE_FIELDS=['ITEM','FECHA','MES','REQUERIMIENTO','EMP','DETALLE DE LA SOLICITUD','CEDULA','EMPLEADO / EMPRESA','ÁREA','CENTRO DE TRABAJO','SOLICITANTE','DESARROLLO DEL CASO','ÚTLIMO SEGUIMIENTO','OBSERVACIONES','PENDIENTE POR','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','MES CIERRE','DIAS ACUMULADOS DEL PROCESO','ESTADO','VISIBLE_DASH','MATERNIDAD_DASH'];
 const EMP_FIELDS=['EMPRESA CONTRATO','TIPO DOCUMENTO','DOCUMENTO','NOMBRE DEL EMPLEADO','CARGO','NIVEL EN LA ESTRUCTURA','JEFE INMEDIATO','SUB AREA','AREA / UNIDAD ORGANIZACIONAL','DIRECCION','GERENCIA','CLASIFICACION COSTO / GASTO','UBICACION','CLASIFICACION GENERAL','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO','TELEFONO','CORREO'];
 const DATE_FIELDS=['FECHA','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'];
+const USER_DISPLAY_NAMES={
+ 'aprada@minex.com.co':'ANDRES PRADA',
+ 'cyanez@minex.com.co':'CLAUDIA YAÑEZ',
+ 'duribe@minex.com.co':'DIEGO URIBE'
+};
 
 // IndexedDB: inicialización centralizada del almacenamiento local de MINEX.
 // La V26 estaba invocando openDB() sin declarar esta función, impidiendo el arranque en GitHub Pages.
@@ -273,10 +278,12 @@ async function signInCloud(email,password){
 function authenticatedEditor(){
  const user=cloudSession?.user;
  const metadata=user?.user_metadata||{};
+ const email=String(user?.email||'').trim().toLowerCase();
+ if(USER_DISPLAY_NAMES[email])return USER_DISPLAY_NAMES[email];
  if(metadata.full_name||metadata.name)return String(metadata.full_name||metadata.name).trim();
- const email=String(user?.email||'').toLowerCase();
- if(email.includes('claudia'))return 'Claudia Yañez';
- if(email.includes('andres')||email.includes('prada'))return 'Andres Prada';
+ if(email.includes('claudia'))return 'CLAUDIA YAÑEZ';
+ if(email.includes('andres')||email.includes('prada'))return 'ANDRES PRADA';
+ if(email.includes('diego')||email.includes('uribe'))return 'DIEGO URIBE';
  return user?.email||'Usuario autenticado';
 }
 async function signOutCloud(){
