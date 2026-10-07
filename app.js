@@ -1,9 +1,9 @@
 const DB='minex_rl_v9';
-const APP_VERSION='26.6';
+const APP_VERSION='26.7';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
-let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null;
+let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudDuplicateReviewsAvailable=false;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
 const STORES=['cases','employees','volumetries','config','duplicateReviews'];
 const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',followMode:'all',sort:'recent',importRows:[],importType:'cases',importMeta:null,currentEditor:'Usuario autenticado'};
@@ -82,16 +82,18 @@ async function del(store,id){return cloudSession&&cloudTable(store)?remoteDelete
 async function clearStore(store){if(cloudSession&&cloudTable(store))return remoteBulkAdd(store,[],{clear:true});const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store,'readwrite').objectStore(store).clear();q.onsuccess=r;q.onerror=()=>j(q.error)})}
 // MINEX usa IndexedDB como almacenamiento operativo local. GitHub es únicamente el medio de publicación del proyecto; no es una base de datos de MINEX.
 
-function cloudTable(store){return store==='cases'?'cases':store==='employees'?'employees':null}
+function cloudTable(store){return store==='cases'?'cases':store==='employees'?'employees':store==='duplicateReviews'&&cloudDuplicateReviewsAvailable?'duplicate_reviews':null}
 function cloudRecord(store,row){
  if(store==='cases')return {id:row._id,item:row.ITEM??null,data:row,seguimientos_historial:Array.isArray(row.SEGUIMIENTOS_HISTORIAL)?row.SEGUIMIENTOS_HISTORIAL:[],updated_by:cloudSession?.user?.id||null};
  if(store==='employees')return {id:row._id,documento:String(row.DOCUMENTO||''),data:row,updated_by:cloudSession?.user?.id||null};
+ if(store==='duplicateReviews')return {id:row._id,item:row.ITEM??null,data:row,review_status:row.reviewStatus||'PENDIENTE',detected_at:row.detectedAt||null,detected_by:row.detectedBy||null,updated_by:cloudSession?.user?.id||null};
  return row;
 }
 function localRecord(store,row){
  const data=row.data&&typeof row.data==='object'?{...row.data}:{};data._id=row.id;
  if(store==='cases'&&Array.isArray(row.seguimientos_historial))data.SEGUIMIENTOS_HISTORIAL=row.seguimientos_historial;
  if(store==='employees'&&row.documento&&!data.DOCUMENTO)data.DOCUMENTO=row.documento;
+ if(store==='duplicateReviews'){data.reviewStatus=row.review_status||data.reviewStatus||'PENDIENTE';if(row.detected_at)data.detectedAt=row.detected_at;if(row.detected_by)data.detectedBy=row.detected_by}
  return data;
 }
 async function cloudAll(store){
@@ -127,30 +129,53 @@ async function remoteBulkAdd(store,rows,{clear=false}={}){
 }
 async function migrateLocalToCloud(){
  if(cloudMigrated||!cloudSession)return;
- const [remoteCases,remoteEmployees]=await Promise.all([cloudAll('cases'),cloudAll('employees')]);
- if(remoteCases.length||remoteEmployees.length){cloudMigrated=true;return}
- const [localCases,localEmployees]=await Promise.all([allLocal('cases'),allLocal('employees')]);
- if(localCases.length)await remoteBulkAdd('cases',localCases);
- if(localEmployees.length){
-  const uniqueEmployees=new Map();
-  for(const employee of localEmployees){
-   const key=employeeKey(employee);
-   if(!key)continue;
-   uniqueEmployees.set(key,uniqueEmployees.has(key)?mergeImportedEmployee(uniqueEmployees.get(key),employee):employee);
-  }
-  await remoteBulkAdd('employees',[...uniqueEmployees.values()]);
+ const [remoteCases,remoteEmployees,remoteDuplicates,localCases,localEmployees,localDuplicates]=await Promise.all([
+  cloudAll('cases'),cloudAll('employees'),cloudAll('duplicateReviews'),
+  allLocal('cases'),allLocal('employees'),allLocal('duplicateReviews')
+ ]);
+ const remoteCasesByKey=new Map(remoteCases.map(row=>[caseImportKey(row),row]));
+ for(const local of localCases){
+  const existing=remoteCasesByKey.get(caseImportKey(local));
+  if(existing)await remotePut('cases',{...mergeImportedCase(existing,local),_id:existing._id});
+  else await remoteAdd('cases',local);
+ }
+ const uniqueEmployees=new Map();
+ for(const employee of localEmployees){
+  const key=employeeKey(employee);
+  if(key)uniqueEmployees.set(key,uniqueEmployees.has(key)?mergeImportedEmployee(uniqueEmployees.get(key),employee):employee);
+ }
+ const remoteEmployeesByKey=new Map(remoteEmployees.map(row=>[employeeKey(row),row]));
+ for(const local of uniqueEmployees.values()){
+  const existing=remoteEmployeesByKey.get(employeeKey(local));
+  if(existing)await remotePut('employees',{...mergeImportedEmployee(existing,local),_id:existing._id});
+  else await remoteAdd('employees',local);
+ }
+ const remoteDuplicateIds=new Set(remoteDuplicates.map(row=>String(row._id)));
+ for(const duplicate of localDuplicates)if(!remoteDuplicateIds.has(String(duplicate._id))){
+  const copy={...duplicate};delete copy._id;await remoteAdd('duplicateReviews',copy);
  }
  cloudMigrated=true;
+}
+async function detectCloudSchema(){
+ cloudDuplicateReviewsAvailable=false;
+ const {error}=await supabaseClient.from('duplicate_reviews').select('id').limit(1);
+ if(!error){cloudDuplicateReviewsAvailable=true;return}
+ if(error.code!=='PGRST205')throw error;
+ console.warn('Supabase aún no tiene public.duplicate_reviews. La bandeja de duplicados seguirá local hasta ejecutar supabase-schema.sql.');
 }
 function startCloudRealtime(){
  if(!supabaseClient||cloudChannel)return;
  const scheduleRefresh=()=>{
+  if(state.page==='upload')return;
   clearTimeout(cloudRefreshTimer);
-  cloudRefreshTimer=setTimeout(()=>refresh().catch(error=>console.error('No se pudo sincronizar el cambio remoto:',error)),180);
+  cloudRefreshTimer=setTimeout(()=>{
+   refresh().catch(error=>console.error('No se pudo sincronizar el cambio remoto:',error));
+  },350);
  };
  cloudChannel=supabaseClient.channel('minex-live')
   .on('postgres_changes',{event:'*',schema:'public',table:'cases'},scheduleRefresh)
   .on('postgres_changes',{event:'*',schema:'public',table:'employees'},scheduleRefresh)
+  .on('postgres_changes',{event:'*',schema:'public',table:'duplicate_reviews'},scheduleRefresh)
   .subscribe(status=>{
    if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')console.warn('Sincronización en tiempo real no disponible:',status);
   });
@@ -183,7 +208,8 @@ async function startApp(){
  state.currentEditor=authenticatedEditor();
  const [c,e,cat]=await Promise.all([loadJson('./data/cases.json'),loadJson('./data/employees.json'),loadJson('./data/catalogs.json')]);
  window.INIT_CASES=c;window.INIT_EMPLOYEES=e;state.catalogs=cat||{};
- await seed();await migrateLocalToCloud();startCloudRealtime();await refresh();
+ await seed();await detectCloudSchema();await migrateLocalToCloud();startCloudRealtime();await refresh();
+ if(!cloudDuplicateReviewsAvailable)toast('Supabase requiere ejecutar supabase-schema.sql para compartir duplicados');
 }
 
 async function storeCount(store){const db=await openDB();return new Promise((r,j)=>{const q=db.transaction(store).objectStore(store).count();q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)})}
@@ -255,7 +281,17 @@ async function init(){
    document.getElementById('app').innerHTML=`<div class="boot-error"><div class="card"><div class="brand-dark">MINEX</div><h1>No fue posible iniciar</h1><p>${esc(err.message)}</p><p class="muted">Verifica que index.html y la carpeta data estén publicados correctamente.</p><button class="btn primary" onclick="location.reload()">Reintentar</button></div></div>`;
  }
 }
-async function refresh(){const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);state.cases=cases;state.employees=employees;state.duplicateReviews=duplicates;render()}
+async function refresh(){
+ if(cloudRefreshInFlight){cloudRefreshQueued=true;return}
+ cloudRefreshInFlight=true;
+ try{
+  const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);
+  state.cases=cases;state.employees=employees;state.duplicateReviews=duplicates;render();
+ }finally{
+  cloudRefreshInFlight=false;
+  if(cloudRefreshQueued){cloudRefreshQueued=false;if(state.page!=='upload')refresh().catch(error=>console.error('No se pudo completar la sincronización:',error))}
+ }
+}
 function navItems(){return [['dashboard','▦','Dashboard'],['cases','▤','Casos'],['follow','◷','Seguimientos'],['upload','⇧','Cargar datos'],['reports','◫','Informes'],['employees','♙','Empleados'],['export','⇩','Exportar'],['settings','⚙','Configuración']]}
 function layout(content){const userLabel=cloudSession?.user?.email||state.currentEditor;const initials=userLabel.includes('@')?userLabel.slice(0,2).toUpperCase():state.currentEditor.split(' ').map(x=>x[0]).slice(0,2).join('');document.getElementById('app').innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><span>MINEX</span><small>GESTIÓN DE RELACIONES LABORALES</small></div><div class="nav">${navItems().map(([id,ic,label])=>`<button class="${state.page===id?'active':''}" onclick="go('${id}')"><i>${ic}</i><span>${label}</span></button>`).join('')}</div><div class="side-foot"><div class="mini-brand">MINEX</div><small>GitHub Pages · MINEX</small></div></aside><main class="main"><div class="topbar"><div class="crumb">MINEX / ${pageLabel(state.page)}</div><div class="top-actions"><button class="top-search" onclick="go('cases')">⌕ <span>Buscar en la aplicación…</span><kbd>Ctrl K</kbd></button><div class="user-chip"><span class="avatar">${esc(initials)}</span><div><strong title="${esc(userLabel)}">${esc(userLabel)}</strong><small><span class="sync-dot"></span> Sincronizado · ${esc(state.currentEditor)}</small></div><button class="btn logout-btn" onclick="signOutCloud()">Cerrar sesión</button></div></div></div>${content}</main></div>`}
 function pageLabel(p){return ({dashboard:'Dashboard',cases:'Casos',follow:'Seguimientos',upload:'Cargar datos',reports:'Informes',employees:'Empleados',export:'Exportar',settings:'Configuración'})[p]||p}

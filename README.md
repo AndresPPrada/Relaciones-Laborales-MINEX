@@ -46,6 +46,13 @@ Sistema web estático para la gestión de casos de Relaciones Laborales. GitHub 
 - La información existente que no aparezca en el archivo no se elimina.
 - Los duplicados dentro del mismo archivo continúan en revisión antes de incorporarse.
 
+## Trabajo multiusuario con Supabase
+- Los casos y empleados se almacenan en Supabase cuando el usuario inicia sesión.
+- La bandeja de duplicados compartida usa `public.duplicate_reviews`.
+- Los cambios remotos de casos, empleados y duplicados se actualizan mediante Supabase Realtime.
+- Ejecuta una vez [`supabase-schema.sql`](./supabase-schema.sql) en Supabase > SQL Editor antes de usar la bandeja de duplicados compartida.
+- La migración inicial compara los datos locales con los remotos; no borra información ni detiene la integración porque Supabase ya tenga registros.
+
 ## Funcionalidades conservadas
 - Dashboard.
 - Casos: creación, consulta, edición, cierre y seguimiento.
