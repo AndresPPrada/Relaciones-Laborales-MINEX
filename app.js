@@ -531,17 +531,13 @@ function bindCaseForm(existingId, reviewId=null){
       last={fecha:parseDateValue(old['FECHA DE SEGUIMIENTO'])||parseDateValue(old.FECHA)||today,editor:'Registro anterior',comentario:old['ÚTLIMO SEGUIMIENTO']};
       history.push(last);
     }
-    if(last && last.fecha!==today){
+    if(last){
       const archive=`${formatDate(last.fecha)} — ${last.editor||'Registro anterior'}: ${last.comentario||''}`;
-      const currentDev=String(old?.['DESARROLLO DEL CASO']||d['DESARROLLO DEL CASO']||'').trim();
+      const currentDev=String(d['DESARROLLO DEL CASO']||'').trim();
       const lines=currentDev?currentDev.split(/\n/).map(v=>v.trim()).filter(Boolean):[];
       if(!lines.some(v=>norm(v)===norm(archive))) lines.push(archive);
       d['DESARROLLO DEL CASO']=lines.join('\n');
       history.push({fecha:today,editor,comentario:comment});
-    }else if(last && last.fecha===today){
-      last.comentario = last.comentario ? `${last.comentario}\n[${editor}] ${comment}` : comment;
-      last.editor = last.editor===editor ? editor : `${last.editor||''} / ${editor}`.replace(/^ \/ /,'');
-      last.fecha=today;
     }else{
       history.push({fecha:today,editor,comentario:comment});
     }
