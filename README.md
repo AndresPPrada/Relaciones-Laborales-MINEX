@@ -1,6 +1,14 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.21 — 09/10/2026
+## Versión actual: V27.22 — 09/10/2026
+
+## V27.22 — Fecha límite legal y priorización simple
+- Se agrega una fecha límite legal independiente, resaltada en negrilla en el formulario y en la lista de Casos.
+- La fecha límite legal no modifica días acumulados, promedios ni otros contadores.
+- Se agregan prioridad y responsable asignado para organizar los casos.
+- La lista permite filtrar por prioridad y responsable y ordenar primero los casos urgentes.
+- Las nuevas propiedades se conservan al cargar y exportar los informes de detalle.
+- El cálculo de días de gestión sigue siendo independiente de los vencimientos legales.
 
 ## V27.21 — Días hábiles de gestión en Casos
 - Los días acumulados se cuentan desde el día siguiente a la radicación, de lunes a viernes, excluyendo festivos nacionales de Colombia.
