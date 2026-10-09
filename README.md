@@ -1,6 +1,15 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.22 — 09/10/2026
+## Versión actual: V27.24 — 09/10/2026
+
+## V27.24 — Centros de trabajo unificados y mejor fluidez
+- Se agrupan variantes claras de centros de trabajo para evitar opciones duplicadas en los filtros.
+- Se normalizan variantes de Dinastía, Edificio Calle 13, Gran Estación, Alto Viento, Lajas, Patio Centro, Patio La Lejía, La Unión y Esmeralda.
+- El campo Centro de trabajo permite seleccionar una sugerencia existente o escribir un centro nuevo.
+- Se conservan separadas las opciones que pueden representar ubicaciones distintas, como Patio Centro, Patio Centro 1 y Patio Centro 2.
+- La tabla de Casos carga 100 filas por vez y permite mostrar más cuando se necesite.
+- La búsqueda de Casos espera brevemente a que termine la escritura antes de filtrar y reconstruir la lista.
+- Se reutilizan opciones y cálculos de días hábiles ya procesados mientras no cambien sus datos.
 
 ## V27.22 — Fecha límite legal y priorización simple
 - Se agrega una fecha límite legal independiente, resaltada en negrilla en el formulario y en la lista de Casos.
