@@ -1,6 +1,12 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V26.4 — 07/10/2026
+## Versión actual: V27.21 — 09/10/2026
+
+## V27.21 — Días hábiles de gestión en Casos
+- Los días acumulados se cuentan desde el día siguiente a la radicación, de lunes a viernes, excluyendo festivos nacionales de Colombia.
+- Los casos abiertos se cuentan hasta hoy y los cerrados hasta su fecha de cierre.
+- El cálculo se aplica al abrir Casos, en el formulario, en los informes y en la exportación oficial.
+- La cifra es un indicador interno de gestión; los vencimientos legales deben controlarse según la norma aplicable a cada trámite.
 
 ## V26.4 — Corrección de desbordamiento de filtros
 - Se corrige el ancho mínimo de los campos de fecha nativos.

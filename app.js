@@ -1,5 +1,5 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.20';
+const APP_VERSION='27.21';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -317,7 +317,7 @@ async function startApp(){
  const [localCases,localEmployees,localDuplicates]=await Promise.all([
   allLocal('cases'),allLocal('employees'),allLocal('duplicateReviews')
  ]);
- state.cases=localCases;state.employees=localEmployees;state.duplicateReviews=localDuplicates;
+ state.cases=localCases.map(cleanCase);state.employees=localEmployees;state.duplicateReviews=localDuplicates;
  render();
  Promise.resolve().then(async()=>{
   cloudSyncInProgress=true;
@@ -351,7 +351,7 @@ async function seed(){
    await add('config',{key:'initialized',value:true});
  }
 }
-function cleanCase(x){const y={};for(const [k,v] of Object.entries(x||{})){y[k]=DATE_FIELDS.includes(k)?parseDateValue(v):v}if(y.ESTADO)y.ESTADO=statusText(y.ESTADO);if(y['DIAS ACUMULADOS DEL PROCESO']!==''&&y['DIAS ACUMULADOS DEL PROCESO']!=null)y['DIAS ACUMULADOS DEL PROCESO']=Number(y['DIAS ACUMULADOS DEL PROCESO'])||0;return y}
+function cleanCase(x){const y={};for(const [k,v] of Object.entries(x||{})){y[k]=DATE_FIELDS.includes(k)?parseDateValue(v):v}if(y.ESTADO)y.ESTADO=statusText(y.ESTADO);if(y.FECHA)y['DIAS ACUMULADOS DEL PROCESO']=businessDaysAfter(y.FECHA,y['FECHA DE CIERRE']||todayISO());else if(y['DIAS ACUMULADOS DEL PROCESO']!==''&&y['DIAS ACUMULADOS DEL PROCESO']!=null)y['DIAS ACUMULADOS DEL PROCESO']=Number(y['DIAS ACUMULADOS DEL PROCESO'])||0;return y}
 function nextCaseId(rows=state.cases){const nums=rows.map(x=>{const m=String(x?.ITEM??'').match(/\d+$/);return m?Number(m[0]):0}).filter(Number.isFinite);return String((nums.length?Math.max(...nums):rows.length)+1)}
 function cleanEmployee(x){const y={};for(const k of EMP_FIELDS)y[k]=x[k]??x[k+' ']??'';for(const k of ['FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'])y[k]=parseDateValue(y[k]);if(y.DOCUMENTO)y.DOCUMENTO=String(y.DOCUMENTO).trim();return y}
 function mergeImportedEmployee(existing,incoming){
@@ -408,7 +408,7 @@ async function refresh(){
  cloudRefreshInFlight=true;
  try{
   const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);
-  state.cases=cases;state.employees=employees;state.duplicateReviews=duplicates;render();
+  state.cases=cases.map(cleanCase);state.employees=employees;state.duplicateReviews=duplicates;render();
  }finally{
   cloudRefreshInFlight=false;
   if(cloudRefreshQueued){cloudRefreshQueued=false;if(state.page!=='upload')refresh().catch(error=>console.error('No se pudo completar la sincronización:',error))}
@@ -493,7 +493,11 @@ function caseForm(x){
  </div></div>`
 }
 function autoMonthAbbr(iso){const x=parseDateValue(iso);if(!x)return '';const m=String(x).slice(5,7);return ({'01':'ene','02':'feb','03':'mar','04':'abr','05':'may','06':'jun','07':'jul','08':'ago','09':'sep','10':'oct','11':'nov','12':'dic'})[m]||''}
-function inclusiveDays(start,end){const a=parseDateValue(start),b=parseDateValue(end);if(!a)return 0;const d1=new Date(a+'T12:00:00'),d2=new Date((b||todayISO())+'T12:00:00');const diff=Math.round((d2-d1)/86400000)+1;return Math.max(0,diff)}
+function easterSunday(year){const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),month=Math.floor((h+l-7*m+114)/31),day=(h+l-7*m+114)%31+1;return new Date(Date.UTC(year,month-1,day))}
+const colombianHolidaysByYear=new Map();
+function colombianHolidaySet(year){if(colombianHolidaysByYear.has(year))return colombianHolidaysByYear.get(year);const holidays=new Set(),add=(month,day,moveToMonday=false)=>{const date=new Date(Date.UTC(year,month-1,day));if(moveToMonday&&date.getUTCDay()!==1)date.setUTCDate(date.getUTCDate()+(8-date.getUTCDay())%7);holidays.add(`${year}-${pad(date.getUTCMonth()+1)}-${pad(date.getUTCDate())}`)};[[1,1],[5,1],[7,20],[8,7],[12,8],[12,25]].forEach(([m,d])=>add(m,d));[[1,6],[3,19],[6,29],[8,15],[10,12],[11,1],[11,11]].forEach(([m,d])=>add(m,d,true));const easter=easterSunday(year);for(const offset of [-3,-2,43,64,71]){const date=new Date(easter);date.setUTCDate(date.getUTCDate()+offset);holidays.add(`${year}-${pad(date.getUTCMonth()+1)}-${pad(date.getUTCDate())}`)}colombianHolidaysByYear.set(year,holidays);return holidays}
+function businessDaysAfter(start,end){const a=parseDateValue(start),b=parseDateValue(end);if(!a||!b||b<=a)return 0;const first=new Date(a+'T12:00:00Z'),last=new Date(b+'T12:00:00Z');first.setUTCDate(first.getUTCDate()+1);let count=0;for(const d=first;d<=last;d.setUTCDate(d.getUTCDate()+1)){const iso=`${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`,weekday=d.getUTCDay();if(weekday!==0&&weekday!==6&&!colombianHolidaySet(d.getUTCFullYear()).has(iso))count++}return count}
+function inclusiveDays(start,end){return businessDaysAfter(start,parseDateValue(end)||todayISO())}
 function updateCaseDerivedFields(form){if(!form)return;const close=form.querySelector('[name="FECHA DE CIERRE"]')?.value||'';const start=form.querySelector('[name="FECHA"]')?.value||'';const month=form.querySelector('[name="MES CIERRE"]');const days=form.querySelector('[name="DIAS ACUMULADOS DEL PROCESO"]');const status=form.querySelector('[name="ESTADO"]');if(month)month.value=close?autoMonthAbbr(close):'';if(status)status.value=close?'CERRADO':'EN SEGUIMIENTO';if(days)days.value=inclusiveDays(start,close);}
 function bindCaseForm(existingId, reviewId=null){
  const form=document.getElementById('caseForm');
@@ -748,7 +752,7 @@ function toExcelSerial(v){
  return Math.round((Date.UTC(y,mo-1,d)-Date.UTC(1899,11,30))/86400000);
 }
 function serialToDate(n){return new Date(Date.UTC(1899,11,30)+n*86400000)}
-function networkDays(a,b){const s=Math.min(a,b),e=Math.max(a,b);let n=0;for(let i=s;i<=e;i++){const w=serialToDate(i).getUTCDay();if(w!==0&&w!==6)n++}return a<=b?n:-n}
+function networkDays(a,b){const start=serialToDate(a),end=serialToDate(b);if(!start||!end)return 0;const iso=d=>`${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;return businessDaysAfter(iso(start),iso(end))}
 function ensureJSZip(){
  if(window.JSZip)return Promise.resolve(window.JSZip);
  if(jszipLoader)return jszipLoader;
@@ -811,7 +815,7 @@ async function exportCasesOfficial(rows,baseName){
       case'ITEM':val=n-1;str=false;break;
       case'MES':val=fecha!==null?MESES_ES[serialToDate(fecha).getUTCMonth()].toUpperCase():'';break;
       case'MES CIERRE':val=cierre?MESES_ES[serialToDate(cierre).getUTCMonth()]:'';break;
-      case'DIAS ACUMULADOS DEL PROCESO':val=fecha!==null?networkDays(fecha,today):0;str=false;break;
+      case'DIAS ACUMULADOS DEL PROCESO':val=fecha!==null?networkDays(fecha,cierre||today):0;str=false;break;
       case'ESTADO':val=cierre?'CERRADO':'EN SEGUIMIENTO';break;
       case'VISIBLE_DASH':val=1;str=false;break;
       case'MATERNIDAD_DASH':val=(text('REQUERIMIENTO')==='Fueros laborales'&&/MATERNIDAD|EMBARAZO|LACTANCIA|LICENCIA/i.test(text('DETALLE DE LA SOLICITUD')))?1:0;str=false;break;
