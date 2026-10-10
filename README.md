@@ -1,6 +1,12 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.24 — 09/10/2026
+## Versión actual: V27.25 — 10/10/2026
+
+## V27.25 — Navegación de seguimientos más ágil
+- Las secciones reutilizan los datos cargados y no vuelven a descargarlos al navegar.
+- Seguimientos muestra inicialmente hasta 50 registros por categoría y permite cargar más.
+- La búsqueda de empleados actualiza solo los resultados y conserva el foco en el campo.
+- Se renueva la versión de caché para que los navegadores reciban los archivos publicados más recientes.
 
 ## V27.24 — Centros de trabajo unificados y mejor fluidez
 - Se agrupan variantes claras de centros de trabajo para evitar opciones duplicadas en los filtros.
