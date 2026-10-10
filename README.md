@@ -1,6 +1,19 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.25 — 10/10/2026
+## Versión actual: V27.27 — 10/10/2026
+
+## V27.27 — Rendimiento del menú
+- Se reutilizan métricas, agrupaciones de informes, detección de duplicados y categorías de seguimientos hasta que cambian los datos.
+- Las búsquedas globales reutilizan el texto normalizado de cada registro.
+- Empleados carga 100 filas por vez y ofrece un botón para mostrar más.
+- Al abrir Casos, Seguimientos o Empleados se inicia con una cantidad de filas acotada.
+- La sincronización con Supabase se mantiene sin cambios.
+
+## V27.26 — Menú más ágil
+- Se reutilizan resultados de indicadores, seguimientos, reportes y detección de duplicados mientras los datos no cambien.
+- Las búsquedas reutilizan índices de texto por registro para evitar normalizar todos los campos en cada actualización.
+- Las métricas se calculan en un recorrido de los casos y se conservan para las pantallas que las comparten.
+- Se actualiza la versión de caché de la aplicación.
 
 ## V27.25 — Navegación de seguimientos más ágil
 - Las secciones reutilizan los datos cargados y no vuelven a descargarlos al navegar.
