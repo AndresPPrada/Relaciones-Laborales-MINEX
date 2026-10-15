@@ -1,6 +1,11 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.28 — 15/10/2026
+## Versión actual: V27.29 — 15/10/2026
+
+## V27.29 — Reparación de inicio de sesión
+- Se corrige un error de sintaxis en el historial cronológico de empleados que impedía iniciar el JavaScript de la aplicación y dejaba el formulario de acceso sin funcionamiento.
+- Se renueva la caché del navegador para distribuir el archivo corregido.
+- Se incluyen licencias y clasificaciones EG, AT y accidente de tránsito como sugerencias en el registro de eventos.
 
 ## V27.28 — Seguimiento de fueros e incapacidades
 - Nueva sección para asociar eventos de fuero, incapacidades y otros tipos configurables a empleados existentes.
