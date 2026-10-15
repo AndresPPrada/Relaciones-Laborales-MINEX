@@ -1,6 +1,24 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.29 — 15/10/2026
+## Versión actual: V27.32 — 15/10/2026
+
+## V27.32 — Alertas por periodos superpuestos
+- Se detectan periodos de incapacidad que coinciden para la misma persona y se muestran en un panel de alerta y en las filas afectadas.
+- La alerta muestra ambas clasificaciones, los tramos coincidentes y el número de días que se deben revisar.
+- El acumulado sigue contando los días calendario coincidentes una sola vez; los informes PDF y Excel incluyen el detalle de coincidencias.
+
+## V27.31 — Control interno de eventos de empleado
+- Se agregan diagnóstico y código CIE-10 opcionales, origen reportado o calificado, estado de calificación, entidad, fecha de decisión y radicado.
+- El informe individual en PDF incluye los datos del evento registrados.
+- Se agrega descarga Excel individual o consolidada con resumen por persona, detalle de eventos y revisiones pendientes.
+- Se puede filtrar el historial por origen y estado de calificación; la búsqueda también incluye diagnóstico y radicado.
+- Todos los campos se sincronizan en la tabla JSONB existente y quedan visibles para usuarios autenticados de MINEX.
+
+## V27.30 — Informes y alertas individuales
+- La clase Licencia queda separada de fuero, incapacidad y otros eventos; los registros antiguos clasificados como “Otro · Licencia” se muestran como licencia.
+- El tablero señala revisiones vencidas, las del día y las próximas dentro de 7 días.
+- Desde el historial de una persona se puede imprimir o guardar en PDF una ficha cronológica, con días de incapacidad acumulados y alerta configurada.
+- Las licencias y fueros no se suman al acumulado de incapacidad.
 
 ## V27.29 — Reparación de inicio de sesión
 - Se corrige un error de sintaxis en el historial cronológico de empleados que impedía iniciar el JavaScript de la aplicación y dejaba el formulario de acceso sin funcionamiento.
@@ -13,7 +31,7 @@
 - Permite configurar umbrales internos de alerta preventiva y prioritaria; las alertas son operativas y no determinan consecuencias legales.
 - La información se sincroniza en Supabase y está disponible a todos los usuarios autenticados de MINEX.
 - Para habilitar la sección, ejecutar una vez `supabase-schema.sql` en Supabase > SQL Editor y recargar la aplicación.
-- Registrar solo información necesaria para gestión; no incluir diagnósticos ni historia clínica.
+- Registrar solo información necesaria para gestión; la ficha no sustituye una calificación formal.
 
 ## V27.27 — Rendimiento del menú
 - Se reutilizan métricas, agrupaciones de informes, detección de duplicados y categorías de seguimientos hasta que cambian los datos.
