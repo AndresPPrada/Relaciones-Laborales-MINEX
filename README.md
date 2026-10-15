@@ -1,6 +1,14 @@
 # MINEX | Gestión de Relaciones Laborales
 
-## Versión actual: V27.27 — 10/10/2026
+## Versión actual: V27.28 — 15/10/2026
+
+## V27.28 — Seguimiento de fueros e incapacidades
+- Nueva sección para asociar eventos de fuero, incapacidades y otros tipos configurables a empleados existentes.
+- Presenta el historial cronológico individual, duración por evento y días de incapacidad acumulados en una ventana móvil.
+- Permite configurar umbrales internos de alerta preventiva y prioritaria; las alertas son operativas y no determinan consecuencias legales.
+- La información se sincroniza en Supabase y está disponible a todos los usuarios autenticados de MINEX.
+- Para habilitar la sección, ejecutar una vez `supabase-schema.sql` en Supabase > SQL Editor y recargar la aplicación.
+- Registrar solo información necesaria para gestión; no incluir diagnósticos ni historia clínica.
 
 ## V27.27 — Rendimiento del menú
 - Se reutilizan métricas, agrupaciones de informes, detección de duplicados y categorías de seguimientos hasta que cambian los datos.

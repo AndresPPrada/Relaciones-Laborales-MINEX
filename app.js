@@ -1,15 +1,15 @@
 const DB='minex_rl_v9';
-const APP_VERSION='27.27';
+const APP_VERSION='27.28';
 const SUPABASE_URL='https://mftwqghegbmjszamungd.supabase.co';
 const SUPABASE_KEY='sb_publishable_Ppkb2JNNTNXbEn3eaXOx4A_q3g0of-n';
 const supabaseClient=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
-let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudSyncInProgress=false,cloudDuplicateReviewsAvailable=false;
+let cloudSession=null,cloudMigrated=false,cloudChannel=null,cloudRefreshTimer=null,cloudRefreshInFlight=false,cloudRefreshQueued=false,cloudSyncInProgress=false,cloudDuplicateReviewsAvailable=false,cloudEmployeeEventsAvailable=false;
 let chartLoader=null,xlsxLoader=null,bootstrapLoader=null,jszipLoader=null;
 let cloudInsertIdPromise=Promise.resolve();
-const STORES=['cases','employees','volumetries','config','duplicateReviews'];
-const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',employeesVisible:100,followMode:'all',followVisible:50,sort:'recent',casesVisible:100,importRows:[],importType:'cases',importMeta:null,importInProgress:false,currentEditor:'Usuario autenticado'};
+const STORES=['cases','employees','volumetries','config','duplicateReviews','employeeEvents','employeeEventSettings'];
+const state={page:'dashboard',cases:[],employees:[],duplicateReviews:[],employeeEvents:[],employeeEventSettings:null,eventEmployeeDocument:'',eventTypeFilter:'',eventSearch:'',eventVisible:100,catalogs:{},charts:{},filters:{},reportFilters:{},selectedCases:new Set(),selectedEmployees:new Set(),selectedDuplicates:new Set(),empSearch:'',employeesVisible:100,followMode:'all',followVisible:50,sort:'recent',casesVisible:100,importRows:[],importType:'cases',importMeta:null,importInProgress:false,currentEditor:'Usuario autenticado'};
 const metricsCache=new WeakMap(),duplicateCache=new WeakMap(),groupStatsCache=new WeakMap(),caseSearchCache=new WeakMap(),employeeSearchCache=new WeakMap();
-let filteredReportCache={source:null,signature:null,rows:null},followCache={source:null,today:null,data:null};
+let filteredReportCache={source:null,signature:null,rows:null},followCache={source:null,today:null,data:null},eventTotalsCache={source:null,today:null,period:null,data:null};
 const CASE_FIELDS=['ITEM','FECHA','FECHA LÍMITE LEGAL','MES','REQUERIMIENTO','EMP','DETALLE DE LA SOLICITUD','CEDULA','EMPLEADO / EMPRESA','ÁREA','CENTRO DE TRABAJO','SOLICITANTE','RESPONSABLE','PRIORIDAD','DESARROLLO DEL CASO','ÚTLIMO SEGUIMIENTO','OBSERVACIONES','PENDIENTE POR','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','MES CIERRE','DIAS ACUMULADOS DEL PROCESO','ESTADO','VISIBLE_DASH','MATERNIDAD_DASH'];
 const EMP_FIELDS=['EMPRESA CONTRATO','TIPO DOCUMENTO','DOCUMENTO','NOMBRE DEL EMPLEADO','CARGO','NIVEL EN LA ESTRUCTURA','JEFE INMEDIATO','SUB AREA','AREA / UNIDAD ORGANIZACIONAL','DIRECCION','GERENCIA','CLASIFICACION COSTO / GASTO','UBICACION','CLASIFICACION GENERAL','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO','TELEFONO','CORREO'];
 const DATE_FIELDS=['FECHA','FECHA LÍMITE LEGAL','FECHA DE SEGUIMIENTO','FECHA DE CIERRE','FECHA ANTIGÜEDAD','ULTIMA FECHA INGRESO'];
@@ -30,7 +30,7 @@ function openDB(){
       reject(new Error('IndexedDB no está disponible en este navegador'));
       return;
     }
-    const request=indexedDB.open(DB,4);
+    const request=indexedDB.open(DB,5);
     request.onupgradeneeded=()=>{
       const db=request.result;
       for(const store of STORES){
@@ -105,11 +105,13 @@ async function clearStore(store){
 }
 // MINEX usa IndexedDB como almacenamiento operativo local. GitHub es únicamente el medio de publicación del proyecto; no es una base de datos de MINEX.
 
-function cloudTable(store){return store==='cases'?'cases':store==='employees'?'employees':store==='duplicateReviews'&&cloudDuplicateReviewsAvailable?'duplicate_reviews':null}
+function cloudTable(store){return store==='cases'?'cases':store==='employees'?'employees':store==='duplicateReviews'&&cloudDuplicateReviewsAvailable?'duplicate_reviews':store==='employeeEvents'&&cloudEmployeeEventsAvailable?'employee_events':store==='employeeEventSettings'&&cloudEmployeeEventsAvailable?'employee_event_settings':null}
 function cloudRecord(store,row){
  if(store==='cases')return {id:row._id??undefined,item:row.ITEM??null,data:row,seguimientos_historial:Array.isArray(row.SEGUIMIENTOS_HISTORIAL)?row.SEGUIMIENTOS_HISTORIAL:[],updated_by:cloudSession?.user?.id||null};
  if(store==='employees')return {id:row._id??undefined,documento:String(row.DOCUMENTO||''),data:row,updated_by:cloudSession?.user?.id||null};
  if(store==='duplicateReviews')return {id:row._id??undefined,item:row.ITEM??null,data:row,review_status:row.reviewStatus||'PENDIENTE',detected_at:row.detectedAt||null,detected_by:row.detectedBy||null,updated_by:cloudSession?.user?.id||null};
+ if(store==='employeeEvents')return {id:row._id??undefined,employee_document:String(row.employeeDocument||''),data:row,updated_by:cloudSession?.user?.id||null};
+ if(store==='employeeEventSettings')return {id:row._id??undefined,data:row,updated_by:cloudSession?.user?.id||null};
  return row;
 }
 function localRecord(store,row){
@@ -117,6 +119,7 @@ function localRecord(store,row){
  if(store==='cases'&&Array.isArray(row.seguimientos_historial))data.SEGUIMIENTOS_HISTORIAL=row.seguimientos_historial;
  if(store==='employees'&&row.documento&&!data.DOCUMENTO)data.DOCUMENTO=row.documento;
  if(store==='duplicateReviews'){data.reviewStatus=row.review_status||data.reviewStatus||'PENDIENTE';if(row.detected_at)data.detectedAt=row.detected_at;if(row.detected_by)data.detectedBy=row.detected_by}
+ if(store==='employeeEvents'&&row.employee_document&&!data.employeeDocument)data.employeeDocument=row.employee_document;
  return data;
 }
 async function cloudAll(store){
@@ -251,10 +254,22 @@ async function migrateLocalToCloud(){
 }
 async function detectCloudSchema(){
  cloudDuplicateReviewsAvailable=false;
- const {error}=await supabaseClient.from('duplicate_reviews').select('id').limit(1);
- if(!error){cloudDuplicateReviewsAvailable=true;return}
- if(error.code!=='PGRST205')throw error;
- console.warn('Supabase aún no tiene public.duplicate_reviews. La bandeja de duplicados seguirá local hasta ejecutar supabase-schema.sql.');
+ cloudEmployeeEventsAvailable=false;
+ const [duplicates,events,eventSettings]=await Promise.all([
+  supabaseClient.from('duplicate_reviews').select('id').limit(1),
+  supabaseClient.from('employee_events').select('id').limit(1),
+  supabaseClient.from('employee_event_settings').select('id').limit(1)
+ ]);
+ if(!duplicates.error)cloudDuplicateReviewsAvailable=true;
+ else if(duplicates.error.code!=='PGRST205')throw duplicates.error;
+ else console.warn('Supabase aún no tiene public.duplicate_reviews. La bandeja de duplicados seguirá local hasta ejecutar supabase-schema.sql.');
+ if(!events.error&&!eventSettings.error)cloudEmployeeEventsAvailable=true;
+ else{
+  const missing=[events,eventSettings].find(result=>result.error?.code==='PGRST205');
+  const failure=[events,eventSettings].find(result=>result.error&&result.error.code!=='PGRST205');
+  if(failure)throw failure.error;
+  if(missing)console.warn('Supabase requiere las tablas employee_events y employee_event_settings. La sección de fueros e incapacidades quedará bloqueada hasta ejecutar supabase-schema.sql.');
+ }
 }
 function startCloudRealtime(){
  if(!supabaseClient||cloudChannel)return;
@@ -269,6 +284,8 @@ function startCloudRealtime(){
   .on('postgres_changes',{event:'*',schema:'public',table:'cases'},scheduleRefresh)
   .on('postgres_changes',{event:'*',schema:'public',table:'employees'},scheduleRefresh)
   .on('postgres_changes',{event:'*',schema:'public',table:'duplicate_reviews'},scheduleRefresh)
+  .on('postgres_changes',{event:'*',schema:'public',table:'employee_events'},scheduleRefresh)
+  .on('postgres_changes',{event:'*',schema:'public',table:'employee_event_settings'},scheduleRefresh)
   .subscribe(status=>{
    if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')console.warn('Sincronización en tiempo real no disponible:',status);
   });
@@ -317,10 +334,10 @@ async function startApp(){
  const [c,e,cat]=await Promise.all([loadJson('./data/cases.json'),loadJson('./data/employees.json'),loadJson('./data/catalogs.json')]);
  window.INIT_CASES=c;window.INIT_EMPLOYEES=e;state.catalogs=cat||{};
  await seed();
- const [localCases,localEmployees,localDuplicates]=await Promise.all([
-  allLocal('cases'),allLocal('employees'),allLocal('duplicateReviews')
+ const [localCases,localEmployees,localDuplicates,localEvents,localEventSettings]=await Promise.all([
+  allLocal('cases'),allLocal('employees'),allLocal('duplicateReviews'),allLocal('employeeEvents'),allLocal('employeeEventSettings')
  ]);
- state.cases=localCases.map(cleanCase);state.employees=localEmployees;state.duplicateReviews=localDuplicates;
+ state.cases=localCases.map(cleanCase);state.employees=localEmployees;state.duplicateReviews=localDuplicates;state.employeeEvents=localEvents;state.employeeEventSettings=localEventSettings[0]||null;
  render();
  Promise.resolve().then(async()=>{
   cloudSyncInProgress=true;
@@ -329,7 +346,7 @@ async function startApp(){
    await migrateLocalToCloud();
    await refresh();
    startCloudRealtime();
-   if(!cloudDuplicateReviewsAvailable)toast('Supabase requiere ejecutar supabase-schema.sql para compartir duplicados');
+  if(!cloudDuplicateReviewsAvailable)toast('Supabase requiere ejecutar supabase-schema.sql para compartir duplicados');
   }finally{
    cloudSyncInProgress=false;
   }
@@ -410,18 +427,18 @@ async function refresh(){
  if(cloudRefreshInFlight){cloudRefreshQueued=true;return}
  cloudRefreshInFlight=true;
  try{
-  const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);
-  state.cases=cases.map(cleanCase);state.employees=employees;state.duplicateReviews=duplicates;render();
+  const [cases,employees,duplicates,events,eventSettings]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews'),all('employeeEvents'),all('employeeEventSettings')]);
+  state.cases=cases.map(cleanCase);state.employees=employees;state.duplicateReviews=duplicates;state.employeeEvents=events;state.employeeEventSettings=eventSettings[0]||null;render();
  }finally{
   cloudRefreshInFlight=false;
   if(cloudRefreshQueued){cloudRefreshQueued=false;if(state.page!=='upload')refresh().catch(error=>console.error('No se pudo completar la sincronización:',error))}
  }
 }
-function navItems(){return [['dashboard','▦','Dashboard'],['cases','▤','Casos'],['follow','◷','Seguimientos'],['upload','⇧','Cargar datos'],['reports','◫','Informes'],['employees','♙','Empleados'],['export','⇩','Exportar'],['settings','⚙','Configuración']]}
+function navItems(){return [['dashboard','▦','Dashboard'],['cases','▤','Casos'],['follow','◷','Seguimientos'],['employeeEvents','◉','Fueros e incapacidades'],['upload','⇧','Cargar datos'],['reports','◫','Informes'],['employees','♙','Empleados'],['export','⇩','Exportar'],['settings','⚙','Configuración']]}
 function layout(content){const userLabel=cloudSession?.user?.email||state.currentEditor;const initials=userLabel.includes('@')?userLabel.slice(0,2).toUpperCase():state.currentEditor.split(' ').map(x=>x[0]).slice(0,2).join('');document.getElementById('app').innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><span>MINEX</span><small>GESTIÓN DE RELACIONES LABORALES</small></div><div class="nav">${navItems().map(([id,ic,label])=>`<button class="${state.page===id?'active':''}" onclick="go('${id}')"><i>${ic}</i><span>${label}</span></button>`).join('')}</div><div class="side-foot"><div class="mini-brand">MINEX</div><small>GitHub Pages · MINEX</small></div></aside><main class="main"><div class="topbar"><div class="crumb">MINEX / ${pageLabel(state.page)}</div><div class="top-actions"><button class="top-search" onclick="go('cases')">⌕ <span>Buscar en la aplicación…</span><kbd>Ctrl K</kbd></button><div class="user-chip"><span class="avatar">${esc(initials)}</span><div><strong title="${esc(userLabel)}">${esc(userLabel)}</strong><small><span class="sync-dot"></span> Sincronizado · ${esc(state.currentEditor)}</small></div><button class="btn logout-btn" onclick="signOutCloud()">Cerrar sesión</button></div></div></div>${content}</main></div>`}
-function pageLabel(p){return ({dashboard:'Dashboard',cases:'Casos',follow:'Seguimientos',upload:'Cargar datos',reports:'Informes',employees:'Empleados',export:'Exportar',settings:'Configuración'})[p]||p}
+function pageLabel(p){return ({dashboard:'Dashboard',cases:'Casos',follow:'Seguimientos',employeeEvents:'Fueros e incapacidades',upload:'Cargar datos',reports:'Informes',employees:'Empleados',export:'Exportar',settings:'Configuración'})[p]||p}
 function header(title,sub,actions=''){return `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="actions">${actions}</div></div>`}
-async function go(p){state.page=p;state.filters={};if(p==='cases')state.casesVisible=100;if(p==='follow')state.followVisible=50;if(p==='employees')state.employeesVisible=100;render()}
+async function go(p){state.page=p;state.filters={};if(p==='cases')state.casesVisible=100;if(p==='follow')state.followVisible=50;if(p==='employeeEvents')state.eventVisible=100;if(p==='employees')state.employeesVisible=100;render()}
 const uniqueOptionsCache=new WeakMap();
 function unique(field,src=state.cases){let cache=uniqueOptionsCache.get(src);if(!cache){cache=new Map();uniqueOptionsCache.set(src,cache)}if(cache.has(field))return cache.get(field);const values=[...new Set(src.map(x=>String(x[field]??'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));cache.set(field,values);return values}
 function opts(vals,selected=''){return `<option value="">Todos</option>${vals.map(v=>`<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(v)}</option>`).join('')}`}
@@ -588,6 +605,61 @@ function mergeImportedCase(existing,incoming){
 function autofillEmployee(doc){const e=state.employees.find(x=>norm(x.DOCUMENTO)===norm(doc));if(!e)return;const f=document.getElementById('caseEmployee');if(f)f.value=e['NOMBRE DEL EMPLEADO']||'';const area=document.querySelector('#caseModal select[name="ÁREA"]');if(area&&e['AREA / UNIDAD ORGANIZACIONAL']){const candidate=[...area.options].find(o=>norm(o.value)===norm(e['AREA / UNIDAD ORGANIZACIONAL']));if(candidate)area.value=candidate.value}toast('Datos del empleado encontrados')}
 async function deleteCase(id){if(confirm('¿Eliminar este caso? Esta acción no se puede deshacer.')){await del('cases',id);toast('Caso eliminado');refresh()}}
 function closeModal(id){document.getElementById(id)?.remove()}
+function calendarDaysInclusive(start,end){const a=parseDateValue(start),b=parseDateValue(end);if(!a||!b||b<a)return 0;return Math.floor((Date.parse(`${b}T12:00:00Z`)-Date.parse(`${a}T12:00:00Z`))/86400000)+1}
+function employeeEventDays(event,today=todayISO()){const start=parseDateValue(event.startDate);if(!start||start>today)return 0;return calendarDaysInclusive(start,event.endDate&&event.endDate<today?event.endDate:today)}
+function employeeIncapacityTotals(settings=state.employeeEventSettings){const period=Math.max(1,Number(settings?.periodDays)||365),today=todayISO();if(eventTotalsCache.source===state.employeeEvents&&eventTotalsCache.today===today&&eventTotalsCache.period===period)return eventTotalsCache.data;const from=new Date(`${today}T12:00:00Z`);from.setUTCDate(from.getUTCDate()-period+1);const fromISO=from.toISOString().slice(0,10),groups=new Map();for(const event of state.employeeEvents){if(norm(event.eventKind)!=='INCAPACIDAD')continue;const key=norm(event.employeeDocument),start=parseDateValue(event.startDate),rawEnd=parseDateValue(event.endDate)||today,end=rawEnd>today?today:rawEnd;if(!key||!start||end<fromISO||start>today||end<start)continue;if(!groups.has(key))groups.set(key,[]);groups.get(key).push([start<fromISO?fromISO:start,end])}const totals=new Map();for(const [key,intervals] of groups){intervals.sort((a,b)=>a[0].localeCompare(b[0]));let total=0,current=null;for(const interval of intervals){if(!current)current=interval;else if(interval[0]<=shiftDateISO(current[1],1)){if(interval[1]>current[1])current[1]=interval[1]}else{total+=calendarDaysInclusive(current[0],current[1]);current=interval}}if(current)total+=calendarDaysInclusive(current[0],current[1]);totals.set(key,total)}eventTotalsCache={source:state.employeeEvents,today,period,data:totals};return totals}
+function employeeIncapacityDays(documentId,settings=state.employeeEventSettings){return employeeIncapacityTotals(settings).get(norm(documentId))||0}
+function shiftDateISO(iso,offset){const date=new Date(`${iso}T12:00:00Z`);date.setUTCDate(date.getUTCDate()+offset);return date.toISOString().slice(0,10)}
+function employeeEventRisk(days,settings=state.employeeEventSettings){const warning=Number(settings?.warningDays)||0,critical=Number(settings?.criticalDays)||0;if(!warning&&!critical)return {label:'Sin umbral',cls:'gray'};if(critical&&days>=critical)return {label:'Alerta prioritaria',cls:'red'};if(warning&&days>=warning)return {label:'Alerta preventiva',cls:'amber'};return {label:'En rango',cls:'green'}}
+function employeeEventRows(){
+ const rows=state.employeeEvents.slice().sort((a,b)=>String(b.startDate||'').localeCompare(String(a.startDate||''))||Number(b._id||0)-Number(a._id||0)),query=norm(state.eventSearch);
+ return rows.filter(event=>(!state.eventEmployeeDocument||norm(event.employeeDocument)===norm(state.eventEmployeeDocument))&&(!state.eventTypeFilter||norm(event.eventKind)===norm(state.eventTypeFilter))&&(!query||[event.employeeDocument,event.employeeName,event.eventKind,event.eventType,event.issuer].some(value=>norm(value).includes(query))));
+}
+function employeeEventsTable(filtered){
+ if(!filtered.length)return '<div class="empty">No hay registros con los filtros seleccionados.</div>';
+ const totals=employeeIncapacityTotals(),visible=filtered.slice(0,state.eventVisible),period=fmt(Number(state.employeeEventSettings?.periodDays)||365);
+ return `<div class="table-wrap"><table class="table wide-table"><thead><tr><th>Empleado</th><th>Clase</th><th>Clasificación</th><th>Periodo</th><th>Días</th><th>Acumulado ${period} días</th><th>Alerta</th><th>Próxima revisión</th><th>Estado</th><th></th></tr></thead><tbody>${visible.map(event=>{const total=totals.get(norm(event.employeeDocument))||0,risk=employeeEventRisk(total),days=employeeEventDays(event);return `<tr><td><button class="link-btn" onclick="state.eventEmployeeDocument='${esc(event.employeeDocument)}';employeeEventPage()">${esc(event.employeeName||'Empleado')}</button><br><small>${esc(event.employeeDocument)}</small></td><td>${esc(event.eventKind)}</td><td>${esc(event.eventType)}</td><td>${formatDate(event.startDate)} – ${event.endDate?formatDate(event.endDate):'En curso'}</td><td>${fmt(days)}</td><td>${norm(event.eventKind)==='INCAPACIDAD'?fmt(total):'—'}</td><td><span class="badge ${risk.cls}">${norm(event.eventKind)==='INCAPACIDAD'?risk.label:'—'}</span></td><td>${formatDate(event.nextReviewDate)||'—'}</td><td>${norm(event.status)==='CERRADO'?'Cerrado':'Activo'}</td><td><button class="icon-btn" title="Editar" onclick="openEmployeeEvent(${event._id})">✎</button><button class="icon-btn danger-icon" title="Eliminar" onclick="deleteEmployeeEvent(${event._id})">⌫</button></td></tr>`}).join('')}</tbody></table></div>${visible.length<filtered.length?`<div class="case-pagination"><small>Mostrando ${fmt(visible.length)} de ${fmt(filtered.length)} registros</small><button class="btn" onclick="state.eventVisible+=100;updateEmployeeEventResults()">Mostrar 100 más</button></div>`:''}`;
+}
+function updateEmployeeEventResults(){const box=document.getElementById('employeeEventResults'),count=document.getElementById('employeeEventCount');if(!box||!count)return;const filtered=employeeEventRows();count.innerHTML=`<strong>${fmt(filtered.length)}</strong> eventos visibles · ${fmt(state.employeeEvents.length)} en total`;box.innerHTML=employeeEventsTable(filtered)}
+function employeeEventPage(){
+ const unavailable=!!cloudSession&&!cloudEmployeeEventsAvailable,rows=unavailable?[]:state.employeeEvents,filtered=unavailable?[]:employeeEventRows();
+ const active=rows.filter(event=>norm(event.status)!=='CERRADO').length,employees=new Set(rows.map(event=>norm(event.employeeDocument))).size,totals=employeeIncapacityTotals(),risks=new Set(rows.filter(event=>{const risk=employeeEventRisk(totals.get(norm(event.employeeDocument))||0);return norm(event.eventKind)==='INCAPACIDAD'&&(risk.cls==='red'||risk.cls==='amber')}).map(event=>norm(event.employeeDocument))).size;
+ const selectedEmployee=state.employees.find(employee=>norm(employee.DOCUMENTO)===norm(state.eventEmployeeDocument));
+ const timeline=selectedEmployee?(()=>{const history=rows.filter(event=>norm(event.employeeDocument)===norm(selectedEmployee.DOCUMENTO)).sort((a,b)=>String(a.startDate||'').localeCompare(String(b.startDate||'')));return `<section class="panel"><div class="panel-head"><div><h2>Historial cronológico · ${esc(selectedEmployee['NOMBRE DEL EMPLEADO'])}</h2><p>${esc(selectedEmployee.DOCUMENTO)} · ${esc(selectedEmployee.EMPRESA CONTRATO)}</p></div><button class="link-btn" onclick="state.eventEmployeeDocument='';employeeEventPage()">Ver todas las personas</button></div>${history.length?`<div class="timeline">${history.map(event=>`<article class="timeline-item"><div class="timeline-date">${formatDate(event.startDate)}${event.endDate?` – ${formatDate(event.endDate)}`:' – En curso'}</div><div class="timeline-content"><strong>${esc(event.eventKind)} · ${esc(event.eventType)}</strong><p>${fmt(employeeEventDays(event))} días · ${esc(event.issuer||'Entidad no registrada')} · ${norm(event.status)==='CERRADO'?'Cerrado':'Activo'}</p>${event.observations?`<small>${esc(event.observations)}</small>`:''}</div></article>`).join('')}</div>`:'<div class="empty">Esta persona aún no tiene eventos registrados.</div>'}</section>`})():'';
+ const employeesOptions=state.employees.slice().sort((a,b)=>String(a['NOMBRE DEL EMPLEADO']||'').localeCompare(String(b['NOMBRE DEL EMPLEADO']||''),'es')).map(employee=>`<option value="${esc(employee.DOCUMENTO)}" ${norm(employee.DOCUMENTO)===norm(state.eventEmployeeDocument)?'selected':''}>${esc(employee['NOMBRE DEL EMPLEADO'])} · ${esc(employee.DOCUMENTO)}</option>`).join('');
+ const settings=state.employeeEventSettings||{};
+ const eventTableAllowed=!unavailable;
+ layout(header('Fueros e incapacidades','Historial cronológico por empleado, días acumulados y alertas operativas',`${eventTableAllowed?'<button class="btn primary" onclick="openEmployeeEvent()">＋ Registrar evento</button>':''}`)+(unavailable?`<div class="notice event-setup-notice"><strong>Falta preparar la sincronización compartida.</strong><p>Ejecuta el archivo <code>supabase-schema.sql</code> una vez en Supabase &gt; SQL Editor. Los registros no se guardarán localmente como sustituto mientras la tabla compartida no exista.</p></div>`:'')+`<div class="metric-grid event-kpis">${kpi('Eventos',fmt(rows.length),'Registros históricos','◉')}${kpi('Activos',fmt(active),'En seguimiento','◷','amber')}${kpi('Personas',fmt(employees),'Con historial','♙')}${kpi('Personas con alerta',fmt(risks),'Según umbrales de MINEX','!','red')}</div><section class="panel event-settings"><div class="panel-head"><div><h2>Umbrales de alerta de MINEX</h2><p>Se aplican a días de incapacidad acumulados en una ventana móvil. Son alertas operativas configurables.</p></div></div>${unavailable?'':`<form class="event-settings-form" onsubmit="saveEmployeeEventSettings(event)"><div class="field"><label>Alerta preventiva · días</label><input type="number" name="warningDays" min="0" value="${esc(settings.warningDays||'')}"></div><div class="field"><label>Alerta prioritaria · días</label><input type="number" name="criticalDays" min="0" value="${esc(settings.criticalDays||'')}"></div><div class="field"><label>Periodo de análisis · días</label><input type="number" name="periodDays" min="1" max="3650" value="${esc(settings.periodDays||365)}"></div><button class="btn" type="submit">Guardar umbrales</button></form>`}<small class="muted">No se usan para determinar derechos, diagnósticos ni consecuencias legales. Configúralos con los criterios internos validados por MINEX.</small></section>${timeline}<section class="panel"><div class="employee-toolbar event-toolbar"><div id="employeeEventCount"><strong>${fmt(filtered.length)}</strong> eventos visibles · ${fmt(rows.length)} en total</div><input value="${esc(state.eventSearch)}" placeholder="Buscar empleado, documento o clasificación…" oninput="state.eventSearch=this.value;state.eventVisible=100;updateEmployeeEventResults()"><select onchange="state.eventTypeFilter=this.value;state.eventVisible=100;updateEmployeeEventResults()"><option value="" ${!state.eventTypeFilter?'selected':''}>Todos los eventos</option><option value="FUERO" ${state.eventTypeFilter==='FUERO'?'selected':''}>Fueros</option><option value="INCAPACIDAD" ${state.eventTypeFilter==='INCAPACIDAD'?'selected':''}>Incapacidades</option><option value="OTRO" ${state.eventTypeFilter==='OTRO'?'selected':''}>Otros</option></select><select onchange="state.eventEmployeeDocument=this.value;employeeEventPage()"><option value="">Historial de todas las personas</option>${employeesOptions}</select></div><div id="employeeEventResults">${eventTableAllowed?employeeEventsTable(filtered):''}</div></section>`);
+}
+function openEmployeeEvent(existingId=null){
+ if(cloudSession&&!cloudEmployeeEventsAvailable)return toast('Ejecuta primero supabase-schema.sql para habilitar la sincronización de esta sección.');
+ const existing=existingId?state.employeeEvents.find(x=>x._id===existingId):null;
+ const suggested=['Fuero sindical','Fuero de salud','Fuero de maternidad / paternidad','Licencia','Incapacidad por enfermedad general (EG)','Incapacidad por accidente de trabajo (AT)','Incapacidad por accidente de tránsito','Otra incapacidad'];
+ const typeOptions=suggested.map(value=>`<option value="${esc(value)}">`).join('');
+ const employeeOptions=state.employees.map(employee=>`<option value="${esc(employee.DOCUMENTO)}" label="${esc(employee['NOMBRE DEL EMPLEADO'])}">`).join('');
+ document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="employeeEventModal"><div class="modal xwide"><div class="modal-head"><div><h2>${existing?'Editar evento':'Registrar fuero o incapacidad'}</h2><p>Vincula el registro a una persona existente. No incluyas diagnóstico ni historia clínica.</p></div><button class="icon-btn" onclick="closeModal('employeeEventModal')">×</button></div><form id="employeeEventForm"><div class="formgrid"><div class="field full"><label>Empleado · documento</label><input name="employeeDocument" list="employeeEventOptions" value="${esc(existing?.employeeDocument||'')}" required autocomplete="off" placeholder="Busca por documento o escríbelo exactamente"><datalist id="employeeEventOptions">${employeeOptions}</datalist><small id="eventEmployeeHint">${existing?esc(existing.employeeName):'Selecciona una persona de la lista.'}</small></div><div class="field"><label>Clase de evento</label><select name="eventKind" required><option value="FUERO" ${existing?.eventKind==='FUERO'?'selected':''}>Fuero laboral</option><option value="INCAPACIDAD" ${existing?.eventKind==='INCAPACIDAD'?'selected':''}>Incapacidad</option><option value="OTRO" ${existing?.eventKind==='OTRO'?'selected':''}>Otro</option></select></div><div class="field"><label>Tipo / clasificación configurable</label><input name="eventType" list="employeeEventTypes" value="${esc(existing?.eventType||'')}" required placeholder="Escribe o selecciona una clasificación"><datalist id="employeeEventTypes">${typeOptions}</datalist></div><div class="field"><label>Fecha inicial</label><input type="date" name="startDate" value="${esc(existing?.startDate||'')}" required></div><div class="field"><label>Fecha final (si aplica)</label><input type="date" name="endDate" value="${esc(existing?.endDate||'')}"></div><div class="field"><label>Próxima revisión</label><input type="date" name="nextReviewDate" value="${esc(existing?.nextReviewDate||'')}"></div><div class="field"><label>Entidad / origen</label><input name="issuer" value="${esc(existing?.issuer||'')}" placeholder="EPS, ARL, aseguradora u otra entidad"></div><div class="field"><label>Estado</label><select name="status"><option value="ACTIVO" ${!existing||existing.status!=='CERRADO'?'selected':''}>Activo / en seguimiento</option><option value="CERRADO" ${existing?.status==='CERRADO'?'selected':''}>Cerrado</option></select></div><div class="field full"><label>Observación operativa · sin diagnóstico</label><textarea name="observations" maxlength="1500" placeholder="Anota solo información necesaria para la gestión y seguimiento.">${esc(existing?.observations||'')}</textarea></div></div><div class="modal-actions"><button type="button" class="btn" onclick="closeModal('employeeEventModal')">Cancelar</button><button class="btn primary">${existing?'Guardar cambios':'Registrar evento'}</button></div></form></div></div>`);
+ const form=document.getElementById('employeeEventForm');form.dataset.id=existing?String(existing._id):'';
+ form.querySelector('[name="employeeDocument"]').addEventListener('input',event=>{const employee=state.employees.find(x=>norm(x.DOCUMENTO)===norm(event.target.value)),hint=document.getElementById('eventEmployeeHint');if(hint)hint.textContent=employee?`${employee['NOMBRE DEL EMPLEADO']} · ${employee.EMPRESA CONTRATO||''}`:'Selecciona una persona registrada en Empleados.'});
+ form.onsubmit=saveEmployeeEvent;
+}
+async function saveEmployeeEvent(event){
+ event.preventDefault();const form=event.currentTarget,data=Object.fromEntries(new FormData(form)),employee=state.employees.find(x=>norm(x.DOCUMENTO)===norm(data.employeeDocument));
+ if(!employee)return toast('Selecciona un empleado que exista en la base de Empleados.');
+ const startDate=parseDateValue(data.startDate),endDate=parseDateValue(data.endDate),nextReviewDate=parseDateValue(data.nextReviewDate);
+ if(endDate&&endDate<startDate)return toast('La fecha final no puede ser anterior a la fecha inicial.');
+ const id=Number(form.dataset.id)||null,existing=id?state.employeeEvents.find(x=>x._id===id):null;
+ const record={...(existing||{}),employeeDocument:String(employee.DOCUMENTO).trim(),employeeName:employee['NOMBRE DEL EMPLEADO']||'',employeeCompany:employee.EMPRESA CONTRATO||'',employeeArea:employee['AREA / UNIDAD ORGANIZACIONAL']||'',eventKind:data.eventKind,eventType:String(data.eventType||'').trim(),startDate,endDate,nextReviewDate,issuer:String(data.issuer||'').trim(),status:data.status,observations:String(data.observations||'').trim(),createdAt:existing?.createdAt||new Date().toISOString(),createdBy:existing?.createdBy||state.currentEditor,updatedAt:new Date().toISOString(),updatedBy:state.currentEditor};
+ try{if(existing)await put('employeeEvents',record);else await add('employeeEvents',record);state.eventEmployeeDocument=record.employeeDocument;closeModal('employeeEventModal');toast(existing?'Evento actualizado':'Evento registrado');await refresh()}catch(error){console.error('No se pudo guardar el evento:',error);toast('No se pudo guardar el evento: '+error.message)}
+}
+async function saveEmployeeEventSettings(event){
+ event.preventDefault();if(cloudSession&&!cloudEmployeeEventsAvailable)return toast('Ejecuta supabase-schema.sql para compartir esta configuración.');
+ const data=Object.fromEntries(new FormData(event.currentTarget)),warningDays=Number(data.warningDays)||0,criticalDays=Number(data.criticalDays)||0,periodDays=Number(data.periodDays)||365;
+ if(periodDays<1||periodDays>3650)return toast('El periodo debe estar entre 1 y 3650 días.');
+ if(warningDays&&criticalDays&&criticalDays<=warningDays)return toast('La alerta prioritaria debe ser mayor que la preventiva.');
+ const setting={warningDays,criticalDays,periodDays,updatedAt:new Date().toISOString(),updatedBy:state.currentEditor};
+ try{if(cloudSession&&cloudEmployeeEventsAvailable){const {error}=await supabaseClient.from('employee_event_settings').upsert({id:1,data:setting,updated_by:cloudSession.user.id},{onConflict:'id'});if(error)throw error}else await putLocal('employeeEventSettings',{...setting,_id:1});toast('Umbrales guardados');await refresh()}catch(error){console.error('No se pudo guardar la configuración de riesgos:',error);toast('No se pudo guardar la configuración: '+error.message)}
+}
+async function deleteEmployeeEvent(id){const record=state.employeeEvents.find(x=>x._id===id);if(!record||!confirm(`¿Eliminar el registro de ${record.employeeName||record.employeeDocument}?`))return;try{await del('employeeEvents',id);toast('Evento eliminado');await refresh()}catch(error){console.error('No se pudo eliminar el evento:',error);toast('No se pudo eliminar el evento: '+error.message)}}
 function followData(){const today=todayISO();if(followCache.source===state.cases&&followCache.today===today)return followCache.data;const open=[],overdue=[],todayRows=[],week=[],withoutDate=[],end=weekFriday(today);for(const item of state.cases){if(statusText(item.ESTADO)==='CERRADO')continue;const x={...item,_followDate:parseDateValue(item['FECHA DE SEGUIMIENTO'])};open.push(x);if(!x._followDate)withoutDate.push(x);else if(x._followDate<today)overdue.push(x);else if(x._followDate===today)todayRows.push(x);else if(x._followDate<=end)week.push(x)}const byDate=(a,b)=>String(a._followDate||'9999-12-31').localeCompare(String(b._followDate||'9999-12-31'));overdue.sort(byDate);todayRows.sort(byDate);week.sort(byDate);withoutDate.sort(byDate);const data={today,end,open,overdue,todayRows,week,withoutDate};followCache={source:state.cases,today,data};return data}
 function followPage(){const {today,end,open,overdue,todayRows,week,withoutDate}=followData();let sections='';if(state.followMode==='all'||state.followMode==='overdue')sections+=followSection('Vencidos',overdue,'danger','Casos abiertos con fecha de seguimiento anterior a hoy.');if(state.followMode==='all'||state.followMode==='today')sections+=followSection('Vencen hoy',todayRows,'warning','Casos abiertos que requieren gestión durante la jornada de hoy.');if(state.followMode==='all'||state.followMode==='week')sections+=followSection('Esta semana · lunes a viernes',week,'info','Seguimientos programados para el resto de la semana laboral.');if(state.followMode==='all')sections+=followSection('Sin fecha programada',withoutDate,'neutral','Casos abiertos que requieren asignar una próxima fecha de seguimiento.');layout(header('Seguimientos','Control de compromisos, vencimientos y próximas gestiones',`<button class="btn" onclick="go('cases')">Ver casos</button><button class="btn primary" onclick="openCase()">＋ Nuevo caso</button>`)+`<div class="follow-summary"><button class="follow-kpi neutral ${state.followMode==='all'?'selected':''}" onclick="state.followMode='all';followPage()"><span>Todos</span><strong>${fmt(open.length)}</strong><small>Casos abiertos</small></button><button class="follow-kpi danger ${state.followMode==='overdue'?'selected':''}" onclick="state.followMode='overdue';followPage()"><span>Vencidos</span><strong>${fmt(overdue.length)}</strong><small>Requieren atención</small></button><button class="follow-kpi warning ${state.followMode==='today'?'selected':''}" onclick="state.followMode='today';followPage()"><span>Vencen hoy</span><strong>${fmt(todayRows.length)}</strong><small>${formatDate(today)}</small></button><button class="follow-kpi info ${state.followMode==='week'?'selected':''}" onclick="state.followMode='week';followPage()"><span>Esta semana</span><strong>${fmt(week.length)}</strong><small>Hasta ${formatDate(end)}</small></button></div>${sections}`)}
 function weekFriday(iso){const d=new Date(iso+'T12:00:00');const day=d.getDay()||7;const diff=5-day;const f=new Date(d);f.setDate(d.getDate()+diff);return `${f.getFullYear()}-${pad(f.getMonth()+1)}-${pad(f.getDate())}`}
@@ -900,7 +972,7 @@ layout(header('Configuración','Control de datos, calidad y almacenamiento compa
 </section>
 <section class="panel">
 <div class="panel-head"><div><h2>Almacenamiento local</h2><p>IndexedDB conserva una copia local para trabajar con rapidez y como respaldo de la sesión.</p></div></div>
-<div class="notice">IndexedDB funciona como caché local. Cuando GitHub está conectado, los registros modificados se publican en el repositorio y pueden ser descargados por otros usuarios.</div>
+<div class="notice">Los casos, empleados, fueros e incapacidades se sincronizan con Supabase y se muestran a los usuarios autenticados de MINEX. IndexedDB conserva datos locales para acelerar la aplicación. GitHub aloja los archivos de la aplicación, no los registros de personas.</div>
 <div class="data-actions"><button class="btn" onclick="exportBackup()">⇩ Descargar respaldo JSON</button><button class="btn" onclick="refresh().catch(error=>toast('No se pudo actualizar: '+error.message))">↻ Recargar datos</button></div>
 </section>
 <section class="panel danger-zone">
@@ -909,6 +981,7 @@ layout(header('Configuración','Control de datos, calidad y almacenamiento compa
 <button class="btn danger-outline" onclick="clearDataStore('cases','casos')">Eliminar todos los casos</button>
 <button class="btn danger-outline" onclick="clearDataStore('employees','empleados')">Eliminar todos los empleados</button>
 <button class="btn danger-outline" onclick="clearDataStore('duplicateReviews','duplicados en revisión')">Eliminar duplicados en revisión</button>
+<button class="btn danger-outline" onclick="clearDataStore('employeeEvents','registros de fueros e incapacidades')">Eliminar fueros e incapacidades</button>
 <div class="notice">Las volumetrías se calculan directamente sobre la base de casos; no existe una segunda base para eliminar.</div>
 <button class="btn danger" onclick="clearAllData()">Eliminar TODA la información</button>
 </div>
@@ -920,7 +993,7 @@ async function restoreInitialData(){
 if(!confirm('Esto reemplazará los datos operativos actuales por los datos iniciales incluidos con la aplicación. ¿Deseas continuar?'))return;
 try{
  cloudSyncInProgress=true;
- for(const s of STORES)await clearStore(s);
+ for(const s of ['cases','employees','volumetries','config','duplicateReviews'])await clearStore(s);
  await seed();
  await refresh();
  toast('Datos iniciales restaurados correctamente');
@@ -933,22 +1006,22 @@ try{
  cloudSyncInProgress=true;
  toast(`Eliminando ${label}… espera la confirmación final`);
  await clearStore(store);
- if(store==='cases'){state.cases=[]}else if(store==='employees'){state.employees=[]}else if(store==='duplicateReviews'){state.duplicateReviews=[]}
+ if(store==='cases'){state.cases=[]}else if(store==='employees'){state.employees=[]}else if(store==='duplicateReviews'){state.duplicateReviews=[]}else if(store==='employeeEvents'){state.employeeEvents=[]}
  toast(`${label.charAt(0).toUpperCase()+label.slice(1)} eliminados correctamente`);
  render();
 }catch(error){console.error(`No se pudieron eliminar ${label}:`,error);toast(`No se pudo eliminar ${label}: ${error.message}`)}
 finally{cloudSyncInProgress=false}
 }
 async function clearAllData(){
-if(!confirm('ADVERTENCIA: se eliminarán CASOS, EMPLEADOS, VOLUMETRÍAS y configuraciones locales. La aplicación quedará vacía. ¿Deseas continuar?'))return;
+if(!confirm('ADVERTENCIA: se eliminarán CASOS, EMPLEADOS, FUEROS E INCAPACIDADES, VOLUMETRÍAS y configuraciones. La aplicación quedará vacía. ¿Deseas continuar?'))return;
 if(!confirm('Última confirmación: ¿ELIMINAR TODA LA INFORMACIÓN? Esta acción no se puede deshacer.'))return;
 try{
  cloudSyncInProgress=true;
  toast('Eliminando toda la información… espera la confirmación final');
  for(const s of STORES)await clearStore(s);
  await putLocal('config',{key:'initialized',value:true});
- await Promise.all(['cases','employees','duplicateReviews'].map(setCloudCleared));
- state.cases=[];state.employees=[];state.duplicateReviews=[];
+ await Promise.all(['cases','employees','duplicateReviews','employeeEvents','employeeEventSettings'].map(setCloudCleared));
+ state.cases=[];state.employees=[];state.duplicateReviews=[];state.employeeEvents=[];state.employeeEventSettings=null;
  toast('Toda la información fue eliminada correctamente');
  render();
 }catch(error){console.error('No se pudo eliminar toda la información:',error);toast('No se pudo eliminar toda la información: '+error.message)}
@@ -959,8 +1032,8 @@ async function syncNow(){
 }
 async function exportBackup(){
  try{
-  const [cases,employees,duplicates]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews')]);
-  const payload={version:APP_VERSION,exportedAt:new Date().toISOString(),cases,employees,duplicateReviews:duplicates};
+  const [cases,employees,duplicates,employeeEvents,employeeEventSettings]=await Promise.all([all('cases'),all('employees'),all('duplicateReviews'),all('employeeEvents'),all('employeeEventSettings')]);
+  const payload={version:APP_VERSION,exportedAt:new Date().toISOString(),cases,employees,duplicateReviews:duplicates,employeeEvents,employeeEventSettings};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`MINEX-respaldo-${todayISO()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   toast('Respaldo descargado');
@@ -973,6 +1046,6 @@ function registerOfflineSupport(){
    console.warn('Soporte offline no disponible:',error);
  });
 }
-function render(){destroyCharts();if(state.page==='dashboard')dashboard();else if(state.page==='cases')casesPage();else if(state.page==='follow')followPage();else if(state.page==='upload')uploadPage();else if(state.page==='reports')reportsPage();else if(state.page==='employees')employeesPage();else if(state.page==='export')exportPage();else settingsPage()}
+function render(){destroyCharts();if(state.page==='dashboard')dashboard();else if(state.page==='cases')casesPage();else if(state.page==='follow')followPage();else if(state.page==='employeeEvents')employeeEventPage();else if(state.page==='upload')uploadPage();else if(state.page==='reports')reportsPage();else if(state.page==='employees')employeesPage();else if(state.page==='export')exportPage();else settingsPage()}
 function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),2600)}
 keySearch();registerOfflineSupport();bindAuthForm();init();

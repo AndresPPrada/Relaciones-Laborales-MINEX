@@ -5,6 +5,26 @@
 button:focus:not(:focus-visible){outline:none}
 button:focus-visible{outline:3px solid #60a5fa;outline-offset:2px}
 
+.event-setup-notice{margin-bottom:16px}
+.event-kpis{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}
+.event-settings{margin-bottom:16px}
+.event-settings-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end;margin:12px 0}
+.event-settings-form .field{min-width:0}
+.event-toolbar{display:flex;flex-wrap:wrap;gap:10px}
+.event-toolbar>input,.event-toolbar>select{max-width:380px;flex:1;min-width:220px}
+.event-toolbar>div:first-child{min-width:200px}
+.timeline{display:flex;flex-direction:column;gap:0;padding:4px 0 4px 12px}
+.timeline-item{display:grid;grid-template-columns:170px minmax(0,1fr);gap:16px;position:relative;padding:0 0 18px 18px;border-left:2px solid #dbeafe}
+.timeline-item:last-child{border-left-color:transparent;padding-bottom:0}
+.timeline-item:before{content:"";position:absolute;left:-7px;top:3px;width:10px;height:10px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 0 0 1px #93c5fd}
+.timeline-date{font-size:11px;font-weight:800;color:#31547f}
+.timeline-content{border:1px solid #e5eaf1;border-radius:9px;padding:11px 13px;background:#fbfcfe}
+.timeline-content strong{font-size:12px;color:#23344d}
+.timeline-content p{font-size:11px;color:#667085;margin:5px 0}
+.timeline-content small{font-size:11px;color:#596579;white-space:pre-wrap}
+@media(max-width:900px){.event-settings-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.event-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.event-settings-form{grid-template-columns:1fr}.event-toolbar>input,.event-toolbar>select{max-width:none;width:100%;min-width:0}.timeline-item{grid-template-columns:1fr;gap:7px}}
+
 .danger-zone{border-color:#fecaca;background:linear-gradient(180deg,#fff,#fffafa)}
 .data-actions{display:flex;gap:10px;flex-wrap:wrap}
 .btn.danger-outline{color:#b91c1c;background:#fff;border:1px solid #fecaca}
