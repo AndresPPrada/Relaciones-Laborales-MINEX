@@ -178,16 +178,3 @@ body{min-height:100%;height:auto!important;overflow-x:hidden!important;overflow-
 #employeeEventModal .event-extra-section>summary:after{content:'+';margin-left:auto;font-size:16px;color:var(--muted,#64748b)}
 #employeeEventModal .event-extra-section[open]>summary:after{content:'−'}
 #employeeEventModal .event-extra-grid{padding:12px 0 4px}
-
-/* V27.33 - Formulario de eventos organizado */
-#employeeEventModal .event-modal{width:min(1080px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden}
-#employeeEventModal .event-form{overflow:auto;min-height:0;padding-right:3px}
-#employeeEventModal .event-section{grid-column:1/-1;border:1px solid #dbe3ef;border-radius:10px;background:#fff;margin:4px 0;overflow:hidden}
-#employeeEventModal .event-section>summary{cursor:pointer;list-style:none;padding:11px 14px;font-weight:750;font-size:12px;color:#1f2937;display:flex;align-items:center;gap:8px;background:#f7f9fc;position:sticky;top:0}
-#employeeEventModal .event-section>summary::-webkit-details-marker{display:none}
-#employeeEventModal .event-section>summary:after{content:'+';margin-left:auto;font-size:17px;color:#64748b}
-#employeeEventModal .event-section[open]>summary:after{content:'−'}
-#employeeEventModal .event-section .formgrid{padding:12px 12px 4px}
-#employeeEventModal .event-section[open] .formgrid{display:grid}
-#employeeEventModal .modal-actions{position:sticky;bottom:0;background:#fff;padding:12px 0 4px;margin-top:10px}
-@media(max-width:700px){#employeeEventModal .event-modal{width:100%;max-height:96vh;padding:14px}#employeeEventModal .event-section .formgrid{grid-template-columns:1fr}}
