@@ -724,7 +724,7 @@ function openEmployeeEvent(existingId=null){
  form.onsubmit=saveEmployeeEvent;
 }
 async function openNewEmployeeFromEvent(){openEmployee(null,employee=>{const field=document.querySelector('#employeeEventForm [name="employeeDocument"]');if(field)field.value=employee.DOCUMENTO;const hint=document.getElementById('eventEmployeeHint');if(hint)hint.textContent=`${employee['NOMBRE DEL EMPLEADO']} · Empleado creado y vinculado`;});}
-function saveEmployeeEvent(event){
+async function saveEmployeeEvent(event){
  event.preventDefault();const form=event.currentTarget,data=Object.fromEntries(new FormData(form)),employee=state.employees.find(x=>norm(x.DOCUMENTO)===norm(data.employeeDocument));
  if(!employee)return toast('Selecciona un empleado que exista en la base de Empleados.');
  const startDate=parseDateValue(data.startDate),endDate=parseDateValue(data.endDate),nextReviewDate=parseDateValue(data.nextReviewDate),originDecisionDate=parseDateValue(data.originDecisionDate);
