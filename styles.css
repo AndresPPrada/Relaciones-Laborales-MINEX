@@ -162,3 +162,11 @@ body{min-height:100%;height:auto!important;overflow-x:hidden!important;overflow-
   .nav button{padding-left:2px;padding-right:2px}.nav button span{font-size:8px}.top-search span{font-size:11px}.top-search kbd{display:none}
   .page-head .actions .btn{flex-basis:calc(50% - 6px)}.chart-md,.chart-lg{height:230px}
 }
+
+/* V27.33 - preview compacta para último comentario/editor en tabla de seguimientos */
+.follow-table td.follow-comment-cell{width:230px;min-width:190px;max-width:230px;vertical-align:top}
+.follow-comment-preview{display:block;width:100%;max-width:100%;padding:0;border:0;background:transparent;text-align:left;color:inherit;cursor:pointer}
+.follow-comment-preview strong{display:block;margin-bottom:3px;font-size:11px;line-height:1.3;color:#172b49;white-space:normal}
+.follow-comment-preview span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;max-height:4.2em;font-size:10px;line-height:1.4;color:#64748b;white-space:normal;overflow-wrap:anywhere}
+.follow-comment-preview:hover span{color:#1d4ed8}
+.follow-comment-preview:focus-visible{outline:2px solid #60a5fa;outline-offset:2px;border-radius:4px}
