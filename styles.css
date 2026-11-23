@@ -178,3 +178,7 @@ body{min-height:100%;height:auto!important;overflow-x:hidden!important;overflow-
 #employeeEventModal .event-extra-section>summary:after{content:'+';margin-left:auto;font-size:16px;color:var(--muted,#64748b)}
 #employeeEventModal .event-extra-section[open]>summary:after{content:'−'}
 #employeeEventModal .event-extra-grid{padding:12px 0 4px}
+
+
+/* Formulario de registro de novedades: numeracion azul fiel al formato fuente */
+.blue-number-module{border:1px solid #dbe6f5;border-radius:12px;margin:12px 0;background:#fff;overflow:hidden}.blue-number-module>summary{cursor:pointer;list-style:none;padding:12px 14px;background:#f7faff;border-bottom:1px solid #e4ecf7}.blue-number-module>summary::-webkit-details-marker{display:none}.blue-number-module[open]>summary{border-bottom:1px solid #e4ecf7}.blue-number-module .module-title{font-weight:800;color:#172033;font-size:12px;letter-spacing:.025em}.blue-question{display:inline-grid;place-items:center;min-width:21px;height:21px;padding:0 4px;margin-right:5px;border-radius:50%;background:#eaf2ff;color:#1766d2;border:1px solid #b9d4ff;font-weight:800;font-size:11px;line-height:1}.blue-number-module>.formgrid{padding:13px}
